@@ -14,8 +14,18 @@ export {
   createRef,
   createValue,
   createEqualityExpression,
-  // Compilers
+  // Equality Compiler
   compileEqualityPredicate,
+  // Comparison Compilers
+  compileGtPredicate,
+  compileGtePredicate,
+  compileLtPredicate,
+  compileLtePredicate,
+  compileNePredicate,
+  // Array Compilers
+  compileInPredicate,
+  compileNinPredicate,
+  // Generic Compiler
   compilePredicate,
   // Error class
   PredicateCompilationError,

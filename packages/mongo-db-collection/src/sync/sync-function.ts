@@ -485,8 +485,29 @@ export function createMongoDoSync<T extends { _id: string }>(
         collection: config.collectionName,
       }
 
+      // Build filter with cursor support
+      let filter: Record<string, unknown> = {}
+
       if (options.where) {
-        rpcParams.filter = options.where
+        filter = { ...options.where }
+      }
+
+      // Handle cursor-based pagination
+      if (options.cursor !== undefined && options.cursorField) {
+        const cursorField = options.cursorField
+        // Determine cursor operator based on sort direction
+        let isDescending = false
+        if (options.orderBy && options.orderBy[cursorField]) {
+          const direction = options.orderBy[cursorField]
+          isDescending = direction === 'desc' || direction === -1
+        }
+        // For ascending order, use $gt; for descending, use $lt
+        const cursorOperator = isDescending ? '$lt' : '$gt'
+        filter[cursorField] = { [cursorOperator]: options.cursor }
+      }
+
+      if (Object.keys(filter).length > 0) {
+        rpcParams.filter = filter
       }
 
       if (options.limit !== undefined) {
@@ -507,6 +528,11 @@ export function createMongoDoSync<T extends { _id: string }>(
       }
 
       const documents = (await rpcClient.rpc('find', rpcParams)) as T[]
+
+      // Check again after async operation
+      if (isCleanedUp) {
+        return
+      }
 
       begin()
 

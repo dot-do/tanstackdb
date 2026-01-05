@@ -25,3 +25,14 @@ export type {
   InsertMutationHandlerConfig,
   HandleInsertMutationConfig,
 } from './insert-mutation.js'
+
+export {
+  createUpdateMutationHandler,
+} from './update-mutation.js'
+
+export type {
+  UpdateMutation,
+  UpdateResult,
+  UpdateMutationHandlerConfig,
+  UpdateMutationHandler,
+} from './update-mutation.js'

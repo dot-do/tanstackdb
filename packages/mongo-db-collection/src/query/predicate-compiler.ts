@@ -198,6 +198,144 @@ function validateEqualityPredicate(predicate: BasicExpression): void {
 }
 
 /**
+ * Validates that an expression is a valid comparison predicate.
+ *
+ * Comparison predicates are functions like gt, gte, lt, lte, ne that take
+ * a property reference as the first argument and a value as the second.
+ *
+ * @param predicate - The expression to validate
+ * @param funcName - The expected function name (for error messages)
+ * @throws PredicateCompilationError if the predicate is invalid
+ */
+function validateComparisonPredicate(predicate: BasicExpression, funcName: string): void {
+  if (predicate.type !== 'func') {
+    throw new PredicateCompilationError(
+      `Expected function expression, got '${predicate.type}'`
+    )
+  }
+
+  const func = predicate as Func
+  if (!func.args || func.args.length < 2) {
+    throw new PredicateCompilationError(
+      `${funcName} expression requires exactly 2 arguments, got ${func.args?.length ?? 0}`
+    )
+  }
+
+  const [firstArg, secondArg] = func.args
+  if (firstArg?.type !== 'ref') {
+    throw new PredicateCompilationError(
+      `First argument must be a property reference, got '${firstArg?.type}'`
+    )
+  }
+
+  if (secondArg?.type !== 'val') {
+    throw new PredicateCompilationError(
+      `Second argument must be a value, got '${secondArg?.type}'`
+    )
+  }
+}
+
+/**
+ * Validates that an expression is a valid array predicate ($in or $nin).
+ *
+ * Array predicates require the second argument to be an array value.
+ *
+ * @param predicate - The expression to validate
+ * @param funcName - The expected function name (for error messages)
+ * @throws PredicateCompilationError if the predicate is invalid
+ */
+function validateArrayPredicate(predicate: BasicExpression, funcName: string): void {
+  validateComparisonPredicate(predicate, funcName)
+
+  const func = predicate as Func
+  const value = func.args[1] as Value
+
+  if (!Array.isArray(value.value)) {
+    throw new PredicateCompilationError(
+      `${funcName} expression requires an array value, got ${typeof value.value}`
+    )
+  }
+}
+
+/**
+ * Validates that an expression is a valid $elemMatch predicate.
+ *
+ * $elemMatch predicates require a property reference as the first argument
+ * and an object (conditions) as the second argument.
+ *
+ * @param predicate - The expression to validate
+ * @throws PredicateCompilationError if the predicate is invalid
+ */
+function validateElemMatchPredicate(predicate: BasicExpression): void {
+  if (predicate.type !== 'func') {
+    throw new PredicateCompilationError(
+      `Expected function expression, got '${predicate.type}'`
+    )
+  }
+
+  const func = predicate as Func
+  if (!func.args || func.args.length < 2) {
+    throw new PredicateCompilationError(
+      `elemMatch expression requires exactly 2 arguments, got ${func.args?.length ?? 0}`
+    )
+  }
+
+  const [firstArg, secondArg] = func.args
+  if (firstArg?.type !== 'ref') {
+    throw new PredicateCompilationError(
+      `First argument must be a property reference, got '${firstArg?.type}'`
+    )
+  }
+
+  if (secondArg?.type !== 'val') {
+    throw new PredicateCompilationError(
+      `Second argument must be a value, got '${secondArg?.type}'`
+    )
+  }
+
+  const value = secondArg as Value
+  if (typeof value.value !== 'object' || value.value === null || Array.isArray(value.value)) {
+    throw new PredicateCompilationError(
+      `elemMatch expression requires an object as conditions, got ${Array.isArray(value.value) ? 'array' : typeof value.value}`
+    )
+  }
+}
+
+/**
+ * Validates that an expression is a valid $size predicate.
+ *
+ * $size predicates require a property reference as the first argument
+ * and a non-negative integer as the second argument.
+ *
+ * @param predicate - The expression to validate
+ * @throws PredicateCompilationError if the predicate is invalid
+ */
+function validateSizePredicate(predicate: BasicExpression): void {
+  validateComparisonPredicate(predicate, 'size')
+
+  const func = predicate as Func
+  const value = func.args[1] as Value
+
+  if (typeof value.value !== 'number') {
+    throw new PredicateCompilationError(
+      `size expression requires a number value, got ${typeof value.value}`
+    )
+  }
+
+  if (value.value < 0) {
+    throw new PredicateCompilationError(
+      `size expression requires a non-negative number, got ${value.value}`
+    )
+  }
+
+  if (!Number.isInteger(value.value)) {
+    throw new PredicateCompilationError(
+      `size expression requires an integer, got ${value.value}`
+    )
+  }
+}
+
+/**
  * Extracts the field path from a PropRef as a dot-notation string.
  *
  * @param ref - The property reference
@@ -286,6 +424,541 @@ export function compileEqualityPredicate<T = Record<string, unknown>>(
 }
 
 // =============================================================================
+// Comparison Predicate Compilers
+// =============================================================================
+
+/**
+ * Compiles a comparison predicate into a MongoDB query filter with the specified operator.
+ *
+ * This is a generic helper used by specific comparison compilers (gt, gte, lt, lte, ne).
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The comparison predicate to compile
+ * @param operator - The MongoDB operator ($gt, $gte, $lt, $lte, $ne)
+ * @param funcName - The function name for error messages
+ * @returns MongoDB filter query object
+ * @throws PredicateCompilationError if the predicate is invalid
+ */
+function compileComparisonPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>,
+  operator: '$gt' | '$gte' | '$lt' | '$lte' | '$ne',
+  funcName: string
+): MongoFilterQuery<T> {
+  validateComparisonPredicate(predicate, funcName)
+
+  const func = predicate as Func<boolean>
+  const ref = func.args[0] as PropRef
+  const value = func.args[1] as Value
+
+  const fieldPath = extractFieldPath(ref)
+  const normalizedValue = normalizeValue(value.value)
+
+  return {
+    [fieldPath]: { [operator]: normalizedValue },
+  } as MongoFilterQuery<T>
+}
+
+/**
+ * Compiles a greater-than predicate into a MongoDB query filter.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The gt predicate to compile
+ * @returns MongoDB filter query object with $gt operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'gt', args: [ref('age'), val(18)] }
+ * // Result: { age: { $gt: 18 } }
+ * ```
+ */
+export function compileGtPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  return compileComparisonPredicate<T>(predicate, '$gt', 'gt')
+}
+
+/**
+ * Compiles a greater-than-or-equal predicate into a MongoDB query filter.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The gte predicate to compile
+ * @returns MongoDB filter query object with $gte operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'gte', args: [ref('age'), val(18)] }
+ * // Result: { age: { $gte: 18 } }
+ * ```
+ */
+export function compileGtePredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  return compileComparisonPredicate<T>(predicate, '$gte', 'gte')
+}
+
+/**
+ * Compiles a less-than predicate into a MongoDB query filter.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The lt predicate to compile
+ * @returns MongoDB filter query object with $lt operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'lt', args: [ref('age'), val(65)] }
+ * // Result: { age: { $lt: 65 } }
+ * ```
+ */
+export function compileLtPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  return compileComparisonPredicate<T>(predicate, '$lt', 'lt')
+}
+
+/**
+ * Compiles a less-than-or-equal predicate into a MongoDB query filter.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The lte predicate to compile
+ * @returns MongoDB filter query object with $lte operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'lte', args: [ref('age'), val(100)] }
+ * // Result: { age: { $lte: 100 } }
+ * ```
+ */
+export function compileLtePredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  return compileComparisonPredicate<T>(predicate, '$lte', 'lte')
+}
+
+/**
+ * Compiles a not-equal predicate into a MongoDB query filter.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The ne predicate to compile
+ * @returns MongoDB filter query object with $ne operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'ne', args: [ref('status'), val('inactive')] }
+ * // Result: { status: { $ne: 'inactive' } }
+ * ```
+ */
+export function compileNePredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  return compileComparisonPredicate<T>(predicate, '$ne', 'ne')
+}
+
+/**
+ * Compiles an in-array predicate into a MongoDB query filter.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The in predicate to compile
+ * @returns MongoDB filter query object with $in operator
+ * @throws PredicateCompilationError if the predicate is invalid or value is not an array
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'in', args: [ref('status'), val(['active', 'pending'])] }
+ * // Result: { status: { $in: ['active', 'pending'] } }
+ * ```
+ */
+export function compileInPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  validateArrayPredicate(predicate, 'in')
+
+  const func = predicate as Func<boolean>
+  const ref = func.args[0] as PropRef
+  const value = func.args[1] as Value
+
+  const fieldPath = extractFieldPath(ref)
+
+  return {
+    [fieldPath]: { $in: value.value },
+  } as MongoFilterQuery<T>
+}
+
+/**
+ * Compiles a not-in-array predicate into a MongoDB query filter.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The nin predicate to compile
+ * @returns MongoDB filter query object with $nin operator
+ * @throws PredicateCompilationError if the predicate is invalid or value is not an array
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'nin', args: [ref('status'), val(['blocked', 'deleted'])] }
+ * // Result: { status: { $nin: ['blocked', 'deleted'] } }
+ * ```
+ */
+export function compileNinPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  validateArrayPredicate(predicate, 'nin')
+
+  const func = predicate as Func<boolean>
+  const ref = func.args[0] as PropRef
+  const value = func.args[1] as Value
+
+  const fieldPath = extractFieldPath(ref)
+
+  return {
+    [fieldPath]: { $nin: value.value },
+  } as MongoFilterQuery<T>
+}
+
+// =============================================================================
+// Array Field Predicate Compilers
+// =============================================================================
+
+/**
+ * Compiles an $elemMatch predicate into a MongoDB query filter.
+ *
+ * $elemMatch matches documents where at least one array element matches
+ * all specified conditions.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The elemMatch predicate to compile
+ * @returns MongoDB filter query object with $elemMatch operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'elemMatch', args: [ref('items'), val({ price: { $gt: 100 } })] }
+ * // Result: { items: { $elemMatch: { price: { $gt: 100 } } } }
+ * ```
+ */
+export function compileElemMatchPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  validateElemMatchPredicate(predicate)
+
+  const func = predicate as Func<boolean>
+  const ref = func.args[0] as PropRef
+  const value = func.args[1] as Value
+
+  const fieldPath = extractFieldPath(ref)
+
+  return {
+    [fieldPath]: { $elemMatch: value.value },
+  } as MongoFilterQuery<T>
+}
+
+/**
+ * Compiles an $all predicate into a MongoDB query filter.
+ *
+ * $all matches documents where the array field contains all the specified values.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The all predicate to compile
+ * @returns MongoDB filter query object with $all operator
+ * @throws PredicateCompilationError if the predicate is invalid or value is not an array
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'all', args: [ref('tags'), val(['typescript', 'react'])] }
+ * // Result: { tags: { $all: ['typescript', 'react'] } }
+ * ```
+ */
+export function compileAllPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  validateArrayPredicate(predicate, 'all')
+
+  const func = predicate as Func<boolean>
+  const ref = func.args[0] as PropRef
+  const value = func.args[1] as Value
+
+  const fieldPath = extractFieldPath(ref)
+
+  return {
+    [fieldPath]: { $all: value.value },
+  } as MongoFilterQuery<T>
+}
+
+/**
+ * Compiles a $size predicate into a MongoDB query filter.
+ *
+ * $size matches documents where the array field has the specified number of elements.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The size predicate to compile
+ * @returns MongoDB filter query object with $size operator
+ * @throws PredicateCompilationError if the predicate is invalid or value is not a non-negative integer
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'size', args: [ref('tags'), val(3)] }
+ * // Result: { tags: { $size: 3 } }
+ * ```
+ */
+export function compileSizePredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  validateSizePredicate(predicate)
+
+  const func = predicate as Func<boolean>
+  const ref = func.args[0] as PropRef
+  const value = func.args[1] as Value
+
+  const fieldPath = extractFieldPath(ref)
+
+  return {
+    [fieldPath]: { $size: value.value },
+  } as MongoFilterQuery<T>
+}
+
+// =============================================================================
+// Logical Predicate Compilers
+// =============================================================================
+
+/**
+ * Compiles an AND predicate into a MongoDB query filter.
+ *
+ * Takes a TanStack DB 'and' function and converts it into MongoDB's $and operator.
+ * Recursively compiles all nested predicates.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The and predicate to compile
+ * @returns MongoDB filter query object with $and operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'and', args: [eq('status', 'active'), eq('verified', true)] }
+ * // Result: { $and: [{ status: 'active' }, { verified: true }] }
+ * ```
+ */
+export function compileAndPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  if (predicate.type !== 'func') {
+    throw new PredicateCompilationError(
+      `Expected function expression, got '${predicate.type}'`
+    )
+  }
+
+  const func = predicate as Func<boolean>
+  if (func.name !== 'and') {
+    throw new PredicateCompilationError(
+      `Expected 'and' function, got '${func.name}'`
+    )
+  }
+
+  // Compile each nested predicate
+  const compiledPredicates = func.args.map((arg) =>
+    compilePredicate<T>(arg as BasicExpression<boolean>)
+  )
+
+  return {
+    $and: compiledPredicates,
+  } as MongoFilterQuery<T>
+}
+
+/**
+ * Compiles an OR predicate into a MongoDB query filter.
+ *
+ * Takes a TanStack DB 'or' function and converts it into MongoDB's $or operator.
+ * Recursively compiles all nested predicates.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The or predicate to compile
+ * @returns MongoDB filter query object with $or operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'or', args: [eq('status', 'active'), eq('status', 'pending')] }
+ * // Result: { $or: [{ status: 'active' }, { status: 'pending' }] }
+ * ```
+ */
+export function compileOrPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  if (predicate.type !== 'func') {
+    throw new PredicateCompilationError(
+      `Expected function expression, got '${predicate.type}'`
+    )
+  }
+
+  const func = predicate as Func<boolean>
+  if (func.name !== 'or') {
+    throw new PredicateCompilationError(
+      `Expected 'or' function, got '${func.name}'`
+    )
+  }
+
+  // Compile each nested predicate
+  const compiledPredicates = func.args.map((arg) =>
+    compilePredicate<T>(arg as BasicExpression<boolean>)
+  )
+
+  return {
+    $or: compiledPredicates,
+  } as MongoFilterQuery<T>
+}
+
+/**
+ * Compiles a NOT predicate into a MongoDB query filter.
+ *
+ * MongoDB's $not operator works at the field level, so the behavior depends
+ * on the type of inner predicate:
+ *
+ * - For equality predicates: { field: { $not: { $eq: value } } }
+ * - For comparison predicates: { field: { $not: { $operator: value } } }
+ * - For compound predicates (and, or): uses $nor for negation
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The not predicate to compile
+ * @returns MongoDB filter query object with appropriate negation
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // NOT(eq('status', 'inactive'))
+ * // Result: { status: { $not: { $eq: 'inactive' } } }
+ *
+ * // NOT(or([eq('a', 1), eq('b', 2)]))
+ * // Result: { $nor: [{ a: 1 }, { b: 2 }] }
+ * ```
+ */
+export function compileNotPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  if (predicate.type !== 'func') {
+    throw new PredicateCompilationError(
+      `Expected function expression, got '${predicate.type}'`
+    )
+  }
+
+  const func = predicate as Func<boolean>
+  if (func.name !== 'not') {
+    throw new PredicateCompilationError(
+      `Expected 'not' function, got '${func.name}'`
+    )
+  }
+
+  if (!func.args || func.args.length < 1) {
+    throw new PredicateCompilationError(
+      `not expression requires exactly 1 argument, got ${func.args?.length ?? 0}`
+    )
+  }
+
+  const innerPredicate = func.args[0] as BasicExpression<boolean>
+
+  // Handle different inner predicate types
+  if (innerPredicate.type === 'func') {
+    const innerFunc = innerPredicate as Func<boolean>
+
+    // For OR predicates, NOT(OR(a, b)) = NOR(a, b)
+    if (innerFunc.name === 'or') {
+      const compiledPredicates = innerFunc.args.map((arg) =>
+        compilePredicate<T>(arg as BasicExpression<boolean>)
+      )
+      return {
+        $nor: compiledPredicates,
+      } as MongoFilterQuery<T>
+    }
+
+    // For AND predicates or other compound predicates, wrap in $nor
+    if (innerFunc.name === 'and' || innerFunc.name === 'nor' || innerFunc.name === 'not') {
+      const compiledInner = compilePredicate<T>(innerPredicate)
+      return {
+        $nor: [compiledInner],
+      } as MongoFilterQuery<T>
+    }
+
+    // For field-level predicates (eq, gt, gte, lt, lte, ne, in, nin)
+    // Use field-level $not
+    if (['eq', 'gt', 'gte', 'lt', 'lte', 'ne', 'in', 'nin'].includes(innerFunc.name)) {
+      const ref = innerFunc.args[0] as PropRef
+      const value = innerFunc.args[1] as Value
+      const fieldPath = extractFieldPath(ref)
+      const normalizedValue = normalizeValue(value.value)
+
+      // Map function name to MongoDB operator
+      const operatorMap: Record<string, string> = {
+        eq: '$eq',
+        gt: '$gt',
+        gte: '$gte',
+        lt: '$lt',
+        lte: '$lte',
+        ne: '$ne',
+        in: '$in',
+        nin: '$nin',
+      }
+
+      const operator = operatorMap[innerFunc.name]
+
+      return {
+        [fieldPath]: { $not: { [operator!]: normalizedValue } },
+      } as MongoFilterQuery<T>
+    }
+  }
+
+  // Fallback: wrap the compiled predicate in $nor
+  const compiledInner = compilePredicate<T>(innerPredicate)
+  return {
+    $nor: [compiledInner],
+  } as MongoFilterQuery<T>
+}
+
+/**
+ * Compiles a NOR predicate into a MongoDB query filter.
+ *
+ * Takes a TanStack DB 'nor' function and converts it into MongoDB's $nor operator.
+ * NOR matches documents that fail all of the specified query expressions.
+ * Recursively compiles all nested predicates.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The nor predicate to compile
+ * @returns MongoDB filter query object with $nor operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'nor', args: [eq('status', 'banned'), eq('verified', false)] }
+ * // Result: { $nor: [{ status: 'banned' }, { verified: false }] }
+ * ```
+ */
+export function compileNorPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  if (predicate.type !== 'func') {
+    throw new PredicateCompilationError(
+      `Expected function expression, got '${predicate.type}'`
+    )
+  }
+
+  const func = predicate as Func<boolean>
+  if (func.name !== 'nor') {
+    throw new PredicateCompilationError(
+      `Expected 'nor' function, got '${func.name}'`
+    )
+  }
+
+  // Compile each nested predicate
+  const compiledPredicates = func.args.map((arg) =>
+    compilePredicate<T>(arg as BasicExpression<boolean>)
+  )
+
+  return {
+    $nor: compiledPredicates,
+  } as MongoFilterQuery<T>
+}
+
+// =============================================================================
 // Generic Predicate Compiler
 // =============================================================================
 
@@ -297,11 +970,12 @@ export function compileEqualityPredicate<T = Record<string, unknown>>(
  *
  * Currently supports:
  * - Equality predicates ('eq' function)
+ * - Comparison predicates ('gt', 'gte', 'lt', 'lte', 'ne' functions)
+ * - Array predicates ('in', 'nin' functions)
+ * - Array field predicates ('elemMatch', 'all', 'size' functions)
+ * - Logical predicates ('and', 'or', 'not', 'nor' functions)
  *
  * Future versions will add support for:
- * - Comparison predicates (gt, gte, lt, lte, ne)
- * - Logical predicates (and, or, not)
- * - Array predicates (in, nin, all)
  * - Pattern predicates (regex)
  *
  * @typeParam T - The document type for type-safe query generation
@@ -327,15 +1001,41 @@ export function compilePredicate<T = Record<string, unknown>>(
       case 'eq':
         return compileEqualityPredicate<T>(predicate)
 
-      // Future: Add cases for other predicate types
-      // case 'gt':
-      // case 'gte':
-      // case 'lt':
-      // case 'lte':
-      // case 'ne':
-      // case 'in':
-      // case 'and':
-      // case 'or':
+      // Comparison predicates
+      case 'gt':
+        return compileGtPredicate<T>(predicate)
+      case 'gte':
+        return compileGtePredicate<T>(predicate)
+      case 'lt':
+        return compileLtPredicate<T>(predicate)
+      case 'lte':
+        return compileLtePredicate<T>(predicate)
+      case 'ne':
+        return compileNePredicate<T>(predicate)
+
+      // Array predicates
+      case 'in':
+        return compileInPredicate<T>(predicate)
+      case 'nin':
+        return compileNinPredicate<T>(predicate)
+
+      // Array field predicates
+      case 'elemMatch':
+        return compileElemMatchPredicate<T>(predicate)
+      case 'all':
+        return compileAllPredicate<T>(predicate)
+      case 'size':
+        return compileSizePredicate<T>(predicate)
+
+      // Logical predicates
+      case 'and':
+        return compileAndPredicate<T>(predicate)
+      case 'or':
+        return compileOrPredicate<T>(predicate)
+      case 'not':
+        return compileNotPredicate<T>(predicate)
+      case 'nor':
+        return compileNorPredicate<T>(predicate)
 
       default:
         throw new PredicateCompilationError(

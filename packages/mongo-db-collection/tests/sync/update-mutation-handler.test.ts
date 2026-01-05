@@ -22,64 +22,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { z } from 'zod'
 
 // =============================================================================
-// Test Setup - Import Types (will be implemented)
+// Test Setup - Import Types
 // =============================================================================
 
-// These imports will need to be created when implementing the handler
-// import {
-//   UpdateMutationHandler,
-//   createUpdateMutationHandler,
-//   type UpdateMutationHandlerConfig,
-//   type UpdateMutation,
-//   type UpdateResult,
-// } from '../../src/mutations/update-handler'
-
-// Placeholder types for RED phase tests
-interface UpdateMutation<T> {
-  key: string
-  previousValue: T
-  newValue: T
-  updatedFields: Partial<T>
-  removedFields: string[]
-  timestamp: number
-}
-
-interface UpdateResult {
-  success: boolean
-  key: string
-  acknowledged: boolean
-  modifiedCount: number
-  error?: Error
-}
-
-interface UpdateMutationHandlerConfig<T> {
-  endpoint: string
-  database: string
-  collectionName: string
-  authToken?: string
-  batchSize?: number
-  batchTimeoutMs?: number
-  retryConfig?: {
-    maxRetries: number
-    retryDelayMs: number
-    backoffMultiplier: number
-  }
-  onOptimisticUpdate?: (mutation: UpdateMutation<T>) => void
-  onUpdateConfirmed?: (result: UpdateResult) => void
-  onUpdateFailed?: (mutation: UpdateMutation<T>, error: Error) => void
-  onConflict?: (mutation: UpdateMutation<T>, serverValue: T) => T | null
-}
-
-interface UpdateMutationHandler<T> {
-  update(mutation: UpdateMutation<T>): Promise<UpdateResult>
-  updateMany(mutations: UpdateMutation<T>[]): Promise<UpdateResult[]>
-  getPendingUpdates(): UpdateMutation<T>[]
-  hasPendingUpdates(): boolean
-  flush(): Promise<UpdateResult[]>
-  cancel(key: string): boolean
-  cancelAll(): void
-  destroy(): void
-}
+import {
+  createUpdateMutationHandler,
+  type UpdateMutationHandlerConfig,
+  type UpdateMutation,
+  type UpdateResult,
+  type UpdateMutationHandler,
+} from '../../src/sync/handlers/update-mutation'
 
 // Test document schema
 const testDocumentSchema = z.object({
@@ -106,19 +58,6 @@ const createMockRpcClient = () => ({
   isConnected: vi.fn(() => true),
 })
 
-// =============================================================================
-// Placeholder implementation for RED phase
-// (These will be replaced by actual imports when implemented)
-// =============================================================================
-
-function createUpdateMutationHandler<T extends { _id: string }>(
-  config: UpdateMutationHandlerConfig<T>,
-  rpcClient?: ReturnType<typeof createMockRpcClient>
-): UpdateMutationHandler<T> {
-  // This is a placeholder that will fail tests
-  // The real implementation will be in src/mutations/update-handler.ts
-  throw new Error('UpdateMutationHandler not implemented')
-}
 
 // =============================================================================
 // Test Suite

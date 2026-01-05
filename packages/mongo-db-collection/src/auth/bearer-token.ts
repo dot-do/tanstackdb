@@ -413,6 +413,20 @@ export interface BearerTokenConfig {
    * ```
    */
   enablePayloadCache?: boolean
+
+  /**
+   * Default headers to include with getAuthHeaders().
+   * These headers are merged with the Authorization header.
+   *
+   * @example
+   * ```typescript
+   * defaultHeaders: {
+   *   'X-API-Version': 'v1',
+   *   'X-Client-ID': 'my-client',
+   * }
+   * ```
+   */
+  defaultHeaders?: Record<string, string>
 }
 
 /**
@@ -1449,5 +1463,242 @@ export class BearerTokenAuthProvider {
    */
   isDisposed(): boolean {
     return this.disposed
+  }
+
+  /**
+   * Returns a headers object containing the Authorization header.
+   *
+   * If defaultHeaders are configured, they will be included in the result.
+   * Each call returns a fresh object, so mutations won't affect future calls.
+   *
+   * @returns Object with Authorization header and any configured default headers
+   *
+   * @example Basic Usage
+   * ```typescript
+   * const auth = new BearerTokenAuthProvider('my-token')
+   * const headers = auth.getAuthHeaders()
+   * // Returns: { Authorization: 'Bearer my-token' }
+   *
+   * // Use in fetch
+   * fetch('/api/data', { headers: auth.getAuthHeaders() })
+   * ```
+   *
+   * @example With Default Headers
+   * ```typescript
+   * const auth = new BearerTokenAuthProvider('my-token', {
+   *   defaultHeaders: {
+   *     'X-API-Version': 'v1',
+   *     'X-Client-ID': 'my-client',
+   *   },
+   * })
+   * const headers = auth.getAuthHeaders()
+   * // Returns: {
+   * //   Authorization: 'Bearer my-token',
+   * //   'X-API-Version': 'v1',
+   * //   'X-Client-ID': 'my-client',
+   * // }
+   * ```
+   */
+  getAuthHeaders(): Record<string, string> {
+    return {
+      ...this.config.defaultHeaders,
+      Authorization: this.getAuthHeader(),
+    }
+  }
+
+  /**
+   * Injects the Authorization header into a headers object.
+   *
+   * Supports multiple header formats:
+   * - Plain objects: Returns a new object with Authorization added
+   * - Headers instances: Returns a new Headers instance with Authorization set
+   * - Array of tuples: Returns a new array with Authorization tuple appended
+   *
+   * The original headers object is not mutated.
+   *
+   * @param headers - The headers to inject Authorization into
+   * @returns A new headers object/instance/array with Authorization included
+   *
+   * @example Plain Object
+   * ```typescript
+   * const auth = new BearerTokenAuthProvider('my-token')
+   * const headers = auth.injectAuthHeader({
+   *   'Content-Type': 'application/json',
+   * })
+   * // Returns: {
+   * //   'Content-Type': 'application/json',
+   * //   Authorization: 'Bearer my-token',
+   * // }
+   * ```
+   *
+   * @example Headers Instance
+   * ```typescript
+   * const headers = new Headers({ 'Content-Type': 'application/json' })
+   * const authHeaders = auth.injectAuthHeader(headers)
+   * authHeaders.get('Authorization') // 'Bearer my-token'
+   * ```
+   *
+   * @example Array of Tuples
+   * ```typescript
+   * const headers: [string, string][] = [
+   *   ['Content-Type', 'application/json'],
+   * ]
+   * const authHeaders = auth.injectAuthHeader(headers)
+   * // Includes ['Authorization', 'Bearer my-token']
+   * ```
+   */
+  injectAuthHeader(headers: Record<string, string>): Record<string, string>
+  injectAuthHeader(headers: Headers): Headers
+  injectAuthHeader(headers: [string, string][]): [string, string][]
+  injectAuthHeader(
+    headers: Record<string, string> | Headers | [string, string][]
+  ): Record<string, string> | Headers | [string, string][] {
+    const authValue = this.getAuthHeader()
+
+    // Handle Headers instance
+    if (headers instanceof Headers) {
+      const newHeaders = new Headers(headers)
+      newHeaders.set('Authorization', authValue)
+      return newHeaders
+    }
+
+    // Handle array of tuples
+    if (Array.isArray(headers)) {
+      // Filter out existing Authorization headers and add new one
+      const filtered = headers.filter(
+        ([key]) => key.toLowerCase() !== 'authorization'
+      )
+      return [...filtered, ['Authorization', authValue] as [string, string]]
+    }
+
+    // Handle plain object
+    return {
+      ...headers,
+      Authorization: authValue,
+    }
+  }
+
+  /**
+   * Injects the Authorization header into a fetch RequestInit object.
+   *
+   * Creates a new RequestInit with the Authorization header added to the
+   * existing headers. The original RequestInit is not mutated.
+   *
+   * @param requestInit - The fetch RequestInit to enhance with Authorization
+   * @returns A new RequestInit with Authorization header included
+   *
+   * @example Basic Usage
+   * ```typescript
+   * const auth = new BearerTokenAuthProvider('my-token')
+   * const init = auth.injectAuthIntoRequestInit({ method: 'GET' })
+   * // Returns: { method: 'GET', headers: { Authorization: 'Bearer my-token' } }
+   * ```
+   *
+   * @example With Existing Headers
+   * ```typescript
+   * const init = auth.injectAuthIntoRequestInit({
+   *   method: 'POST',
+   *   headers: { 'Content-Type': 'application/json' },
+   *   body: JSON.stringify({ data: 'test' }),
+   * })
+   * // Returns: {
+   * //   method: 'POST',
+   * //   headers: {
+   * //     'Content-Type': 'application/json',
+   * //     Authorization: 'Bearer my-token',
+   * //   },
+   * //   body: '{"data":"test"}',
+   * // }
+   * ```
+   */
+  injectAuthIntoRequestInit(requestInit: RequestInit): RequestInit {
+    const existingHeaders = requestInit.headers
+
+    let newHeaders: Record<string, string> | Headers
+
+    if (existingHeaders instanceof Headers) {
+      // Clone the Headers and add Authorization
+      newHeaders = new Headers(existingHeaders)
+      newHeaders.set('Authorization', this.getAuthHeader())
+    } else if (Array.isArray(existingHeaders)) {
+      // Convert array to object and add Authorization
+      const headersObj: Record<string, string> = {}
+      for (const [key, value] of existingHeaders) {
+        headersObj[key] = value
+      }
+      headersObj.Authorization = this.getAuthHeader()
+      newHeaders = headersObj
+    } else if (existingHeaders) {
+      // Plain object
+      newHeaders = {
+        ...existingHeaders,
+        Authorization: this.getAuthHeader(),
+      }
+    } else {
+      // No existing headers
+      newHeaders = {
+        Authorization: this.getAuthHeader(),
+      }
+    }
+
+    return {
+      ...requestInit,
+      headers: newHeaders,
+    }
+  }
+
+  /**
+   * Creates a fetch function that automatically includes the Authorization header.
+   *
+   * The returned function has the same signature as the global fetch function
+   * but automatically adds the current token to the Authorization header.
+   *
+   * If the token is refreshed, subsequent calls will use the new token.
+   *
+   * @param customFetch - Optional custom fetch implementation to wrap.
+   *                      Defaults to the global fetch function.
+   * @returns A fetch function with automatic Authorization header injection
+   *
+   * @example Basic Usage
+   * ```typescript
+   * const auth = new BearerTokenAuthProvider('my-token')
+   * const authFetch = auth.createAuthenticatedFetch()
+   *
+   * const response = await authFetch('https://api.example.com/data')
+   * // Request includes: Authorization: Bearer my-token
+   * ```
+   *
+   * @example With Request Options
+   * ```typescript
+   * const authFetch = auth.createAuthenticatedFetch()
+   *
+   * const response = await authFetch('https://api.example.com/data', {
+   *   method: 'POST',
+   *   headers: { 'Content-Type': 'application/json' },
+   *   body: JSON.stringify({ key: 'value' }),
+   * })
+   * // Request includes both Content-Type and Authorization headers
+   * ```
+   *
+   * @example With Custom Fetch Implementation
+   * ```typescript
+   * import nodeFetch from 'node-fetch'
+   *
+   * const auth = new BearerTokenAuthProvider('my-token')
+   * const authFetch = auth.createAuthenticatedFetch(nodeFetch)
+   *
+   * // Uses node-fetch with Authorization header
+   * const response = await authFetch('https://api.example.com/data')
+   * ```
+   */
+  createAuthenticatedFetch(
+    customFetch?: typeof fetch
+  ): typeof fetch {
+    const fetchFn = customFetch ?? fetch
+
+    return (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const enhancedInit = this.injectAuthIntoRequestInit(init ?? {})
+      return fetchFn(input, enhancedInit)
+    }
   }
 }

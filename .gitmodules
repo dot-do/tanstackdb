@@ -1,0 +1,3 @@
+[submodule "examples/tanstackdb"]
+	path = examples/tanstackdb
+	url = https://github.com/dot-do/tanstackdb.git

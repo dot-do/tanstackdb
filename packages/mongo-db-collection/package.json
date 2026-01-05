@@ -1,0 +1,82 @@
+{
+  "name": "@tanstack/mongo-db-collection",
+  "version": "0.0.1",
+  "description": "TanStack DB adapter that syncs to mongo.do with real-time change stream support",
+  "author": "Tanner Linsley",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "@tanstack/db": ">=0.0.1"
+  },
+  "peerDependenciesMeta": {
+    "@tanstack/db": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^2.0.0",
+    "zod": "^3.23.0"
+  },
+  "keywords": [
+    "tanstack",
+    "tanstack-db",
+    "database",
+    "mongo",
+    "mongodb",
+    "mongo.do",
+    "sync",
+    "adapter",
+    "real-time",
+    "change-stream",
+    "reactive",
+    "offline-first"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TanStack/db.git",
+    "directory": "packages/mongo-db-collection"
+  },
+  "homepage": "https://tanstack.com/db",
+  "bugs": {
+    "url": "https://github.com/TanStack/db/issues"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/tannerlinsley"
+  }
+}

@@ -103,7 +103,7 @@ export function createIndexSetup(config: IndexSetupConfig): IndexSetupHandler {
   }
 
   return async (): Promise<IndexSetupResult> => {
-    throw new Error('Not implemented: createIndexSetup handler')
+    return setupIndexes(config)
   }
 }
 
@@ -142,5 +142,172 @@ export async function setupIndexes(config: IndexSetupConfig): Promise<IndexSetup
     }
   }
 
-  throw new Error('Not implemented: setupIndexes')
+  const { rpcClient, database, collection, indexes, options, hooks } = config
+
+  let indexesCreated = 0
+  let indexesSkipped = 0
+  let indexesFailed = 0
+  let lastError: Error | undefined
+  let isDuplicateIndexError = false
+  let existingIndexes: Array<{ name: string; key: Record<string, number | string>; unique?: boolean }> | undefined
+
+  // Handle listExisting option
+  if (options?.listExisting) {
+    try {
+      existingIndexes = await rpcClient.rpc('listIndexes', {
+        database,
+        collection,
+      }) as Array<{ name: string; key: Record<string, number | string>; unique?: boolean }>
+    } catch (error) {
+      return {
+        success: false,
+        indexesCreated: 0,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  }
+
+  // Handle empty indexes array
+  if (indexes.length === 0) {
+    hooks?.onComplete?.({
+      success: true,
+      indexesCreated: 0,
+      indexesSkipped: 0,
+      indexesFailed: 0,
+    })
+    return {
+      success: true,
+      indexesCreated: 0,
+      indexesSkipped: 0,
+      existingIndexes,
+    }
+  }
+
+  // Helper function to create a single index
+  const createSingleIndex = async (index: IndexDefinition): Promise<{ created: boolean; skipped: boolean; error?: Error }> => {
+    // Call onBeforeCreate hook
+    hooks?.onBeforeCreate?.({
+      database,
+      collection,
+      index,
+    })
+
+    try {
+      const result = await rpcClient.rpc('createIndex', {
+        database,
+        collection,
+        keys: index.key,
+        options: index.options,
+      })
+
+      // Call onAfterCreate hook
+      hooks?.onAfterCreate?.({
+        database,
+        collection,
+        index,
+        result,
+      })
+
+      return { created: true, skipped: false }
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error))
+
+      // Call onError hook
+      hooks?.onError?.({
+        error: err,
+        database,
+        collection,
+        index,
+      })
+
+      // Check if this is a duplicate index error
+      const isDuplicate = err.message.includes('Index already exists')
+
+      if (isDuplicate && options?.skipExisting) {
+        return { created: false, skipped: true }
+      }
+
+      return { created: false, skipped: false, error: err }
+    }
+  }
+
+  // Process indexes based on concurrency option
+  const concurrency = options?.concurrency ?? 1
+
+  if (concurrency === 1) {
+    // Sequential processing
+    for (const index of indexes) {
+      const result = await createSingleIndex(index)
+      if (result.created) {
+        indexesCreated++
+      } else if (result.skipped) {
+        indexesSkipped++
+      } else if (result.error) {
+        indexesFailed++
+        lastError = result.error
+        isDuplicateIndexError = result.error.message.includes('Index already exists') ||
+                                 result.error.message.includes('different options')
+
+        // If skipExisting is not enabled, stop on first error
+        if (!options?.skipExisting) {
+          break
+        }
+      }
+    }
+  } else {
+    // Concurrent processing with limited concurrency
+    const queue = [...indexes]
+    const inProgress: Promise<void>[] = []
+
+    const processNext = async (): Promise<void> => {
+      while (queue.length > 0) {
+        const index = queue.shift()!
+        const result = await createSingleIndex(index)
+        if (result.created) {
+          indexesCreated++
+        } else if (result.skipped) {
+          indexesSkipped++
+        } else if (result.error) {
+          indexesFailed++
+          lastError = result.error
+          isDuplicateIndexError = result.error.message.includes('Index already exists') ||
+                                   result.error.message.includes('different options')
+        }
+      }
+    }
+
+    // Start workers up to concurrency limit
+    for (let i = 0; i < Math.min(concurrency, indexes.length); i++) {
+      inProgress.push(processNext())
+    }
+
+    await Promise.all(inProgress)
+  }
+
+  const success = lastError === undefined || (options?.skipExisting === true && indexesCreated > 0) || (options?.skipExisting === true && indexesSkipped === indexes.length)
+
+  // Call onComplete hook
+  hooks?.onComplete?.({
+    success,
+    indexesCreated,
+    indexesSkipped,
+    indexesFailed,
+  })
+
+  const finalResult: IndexSetupResult = {
+    success,
+    indexesCreated,
+    indexesSkipped,
+  }
+
+  if (lastError) {
+    finalResult.error = lastError
+    finalResult.isDuplicateIndexError = isDuplicateIndexError
+  }
+
+  if (existingIndexes !== undefined) {
+    finalResult.existingIndexes = existingIndexes
+  }
+
+  return finalResult
 }

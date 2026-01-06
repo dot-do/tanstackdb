@@ -421,8 +421,12 @@ export class MongoDoClient {
     this.log('info', 'Connecting to server', { endpoint: this.endpoint, timeout: connectTimeout })
 
     return new Promise<void>((resolve, reject) => {
-      // Build WebSocket URL (no token in URL for security)
-      const wsUrl = this.endpoint.replace(/^http/, 'ws')
+      // Build WebSocket URL with auth token as query parameter
+      let wsUrl = this.endpoint.replace(/^http/, 'ws')
+      if (this.authOptions?.token) {
+        const separator = wsUrl.includes('?') ? '&' : '?'
+        wsUrl = `${wsUrl}${separator}token=${encodeURIComponent(this.authOptions.token)}`
+      }
 
       // Set up connection timeout
       const timeoutId = setTimeout(() => {
@@ -434,14 +438,9 @@ export class MongoDoClient {
         reject(MongoDoError.connectionTimeout(connectTimeout))
       }, connectTimeout)
 
-      // Create WebSocket connection with Bearer token in protocols for security
+      // Create WebSocket connection
       try {
-        if (this.authOptions?.token) {
-          // Pass token via WebSocket subprotocol (more secure than URL)
-          this.ws = new WebSocket(wsUrl, [`Bearer.${this.authOptions.token}`])
-        } else {
-          this.ws = new WebSocket(wsUrl)
-        }
+        this.ws = new WebSocket(wsUrl)
       } catch (error) {
         clearTimeout(timeoutId)
         this.log('error', 'Failed to create WebSocket', { error })

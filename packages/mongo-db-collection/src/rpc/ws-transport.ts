@@ -280,6 +280,9 @@ export class WebSocketTransport extends EventEmitter {
   /** List of active subscriptions for restoration after reconnect. */
   private subscriptions: Subscription[] = []
 
+  /** Set of subscriptionIds that are pending unsubscribe (unsubscribed before subscribe response arrived). */
+  private pendingUnsubscribes = new Set<string>()
+
   /** Timestamp when connection was established. */
   private connectedAt: number = 0
 
@@ -407,6 +410,20 @@ export class WebSocketTransport extends EventEmitter {
    */
   get isConnected(): boolean {
     return this._state === 'connected'
+  }
+
+  /**
+   * Gets the number of active subscriptions.
+   *
+   * @returns The count of active subscriptions
+   *
+   * @example
+   * ```typescript
+   * console.log(`Active subscriptions: ${transport.subscriptionCount}`)
+   * ```
+   */
+  get subscriptionCount(): number {
+    return this.subscriptions.length
   }
 
   /**
@@ -555,6 +572,10 @@ export class WebSocketTransport extends EventEmitter {
     }
     this.messageQueue = []
 
+    // Clear all subscriptions on intentional disconnect
+    this.subscriptions = []
+    this.pendingUnsubscribes.clear()
+
     if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
       return new Promise<void>((resolve) => {
         const onClose = () => {
@@ -633,6 +654,19 @@ export class WebSocketTransport extends EventEmitter {
     // Track subscriptions for reconnect restoration
     if (method === 'subscribe') {
       this.subscriptions.push({ method, params: params as unknown })
+    }
+
+    // Remove subscription when unsubscribe is called
+    if (method === 'unsubscribe' && params && typeof params === 'object' && 'subscriptionId' in params) {
+      const subscriptionId = (params as { subscriptionId: string }).subscriptionId
+      const index = this.subscriptions.findIndex((sub) => sub.subscriptionId === subscriptionId)
+      if (index !== -1) {
+        this.subscriptions.splice(index, 1)
+      } else {
+        // If subscription not found, it might not have received its subscriptionId yet
+        // Track it as pending unsubscribe to remove when subscribe response arrives
+        this.pendingUnsubscribes.add(subscriptionId)
+      }
     }
 
     return new Promise<T>((resolve, reject) => {
@@ -938,9 +972,23 @@ export class WebSocketTransport extends EventEmitter {
             typeof response.result === 'object' &&
             'subscriptionId' in response.result
           ) {
-            const lastSub = this.subscriptions[this.subscriptions.length - 1]
-            if (lastSub) {
-              lastSub.subscriptionId = (response.result as { subscriptionId: string }).subscriptionId
+            const subscriptionId = (response.result as { subscriptionId: string }).subscriptionId
+
+            // Check if this subscription was already requested to be unsubscribed
+            if (this.pendingUnsubscribes.has(subscriptionId)) {
+              // Remove from pending unsubscribes
+              this.pendingUnsubscribes.delete(subscriptionId)
+              // Find and remove the subscription that doesn't have a subscriptionId yet
+              const index = this.subscriptions.findIndex((sub) => !sub.subscriptionId)
+              if (index !== -1) {
+                this.subscriptions.splice(index, 1)
+              }
+            } else {
+              // Update subscription with its ID
+              const lastSub = this.subscriptions[this.subscriptions.length - 1]
+              if (lastSub && !lastSub.subscriptionId) {
+                lastSub.subscriptionId = subscriptionId
+              }
             }
           }
           pending.resolve(response.result)

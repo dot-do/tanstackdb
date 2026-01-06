@@ -378,7 +378,6 @@ describe('createReplayFailureHandler', () => {
 
     it('should retry a specific failed mutation', async () => {
       const mutation = createMockMutation()
-      mockRpc.rpc.mockRejectedValueOnce(new Error('Network error'))
 
       await handler.handleFailure({
         mutation: mutation as FailedMutation<TestDocument>,

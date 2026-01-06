@@ -557,11 +557,17 @@ describe('GracefulDegradation', () => {
         return { success: true }
       })
 
-      const result = await degradation.request(
+      const promise = degradation.request(
         'find',
         { collection: 'users' },
         { retry: true }
       )
+
+      // Advance timers to allow retries (2 retries needed)
+      await vi.advanceTimersByTimeAsync(1000) // First retry delay
+      await vi.advanceTimersByTimeAsync(2000) // Second retry delay
+
+      const result = await promise
 
       expect(attempts).toBe(3)
       expect(result).toEqual({ success: true })
@@ -570,10 +576,12 @@ describe('GracefulDegradation', () => {
     it('should use exponential backoff', async () => {
       const delays: number[] = []
       let lastTime = Date.now()
+      let callCount = 0
 
       transport.setSendHandler(async () => {
         const now = Date.now()
-        if (delays.length > 0) {
+        callCount++
+        if (callCount > 1) {
           delays.push(now - lastTime)
         }
         lastTime = now
@@ -695,7 +703,7 @@ describe('GracefulDegradation', () => {
         return { success: true }
       })
 
-      await degradation.request(
+      const promise = degradation.request(
         'find',
         { collection: 'users' },
         {
@@ -703,6 +711,11 @@ describe('GracefulDegradation', () => {
           retryCondition: (error) => (error as any).code === 'ETIMEDOUT',
         }
       )
+
+      // Advance timer for the retry delay
+      await vi.advanceTimersByTimeAsync(1000)
+
+      await promise
 
       expect(attempts).toBe(2)
     })

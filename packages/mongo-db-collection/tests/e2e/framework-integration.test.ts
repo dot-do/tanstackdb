@@ -268,11 +268,17 @@ describe('Framework Integration E2E Tests', () => {
   })
 
   describe('Mutation Handler Integration', () => {
+    // Mock RPC client for testing
+    const mockRpcClient = {
+      rpc: vi.fn().mockResolvedValue({ acknowledged: true }),
+      isConnected: () => true,
+    }
+
     it('should create insert mutation handler', () => {
       const handler = createInsertMutationHandler({
-        collectionName: 'users',
-        endpoint: 'https://api.mongo.do',
+        rpcClient: mockRpcClient,
         database: 'testdb',
+        collection: 'users',
       })
 
       expect(handler).toBeDefined()
@@ -280,21 +286,23 @@ describe('Framework Integration E2E Tests', () => {
     })
 
     it('should create update mutation handler', () => {
+      // createUpdateMutationHandler returns an UpdateMutationHandler object, not a function
       const handler = createUpdateMutationHandler({
-        collectionName: 'users',
         endpoint: 'https://api.mongo.do',
         database: 'testdb',
+        collectionName: 'users',
       })
 
       expect(handler).toBeDefined()
-      expect(typeof handler).toBe('function')
+      expect(typeof handler).toBe('object')
+      expect(typeof handler.update).toBe('function')
     })
 
     it('should create delete mutation handler', () => {
       const handler = createDeleteMutationHandler({
-        collectionName: 'users',
-        endpoint: 'https://api.mongo.do',
+        rpcClient: mockRpcClient,
         database: 'testdb',
+        collection: 'users',
       })
 
       expect(handler).toBeDefined()
@@ -687,11 +695,15 @@ describe('Framework Integration E2E Tests', () => {
     })
 
     it('should provide consistent API surface', () => {
-      // Both factory functions should return identical results
-      const config1 = mongoDoCollectionOptions<User>(createUserConfig())
-      const config2 = createMongoDoCollection<User>(createUserConfig())
+      // Both factory functions should return the same config object
+      // when given the same input (they both just return their input)
+      const sharedConfig = createUserConfig()
+      const config1 = mongoDoCollectionOptions<User>(sharedConfig)
+      const config2 = createMongoDoCollection<User>(sharedConfig)
 
-      expect(config1).toEqual(config2)
+      // When using the same input object, both functions return that same object
+      expect(config1).toBe(config2)
+      expect(config1).toBe(sharedConfig)
     })
   })
 })

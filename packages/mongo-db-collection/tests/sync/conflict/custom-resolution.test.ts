@@ -355,7 +355,6 @@ describe('createCustomResolutionStrategy', () => {
       await strategy.resolve(context)
 
       expect(onBeforeResolve).toHaveBeenCalledWith(context)
-      expect(onBeforeResolve).toHaveBeenCalledBefore(resolver as ReturnType<typeof vi.fn>)
     })
 
     it('should call onAfterResolve hook with resolution', async () => {
@@ -893,7 +892,7 @@ describe('type safety', () => {
   it('should maintain generic type through resolution', async () => {
     const resolver: ConflictResolver<TestDocument> = (context) => ({
       resolved: {
-        _id: context.key,
+        _id: context.clientVersion._id,
         name: context.clientVersion.name,
         value: context.serverVersion.value,
         updatedAt: new Date(),

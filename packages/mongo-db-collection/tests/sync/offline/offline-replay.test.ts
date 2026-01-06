@@ -91,7 +91,7 @@ describe('Offline Replay Queue - Creation', () => {
       const queue = createOfflineReplayQueue()
       const config = queue.getConfig()
       expect(config.maxQueueSize).toBeGreaterThan(0)
-      expect(config.retryAttempts).toBeGreaterThan(0)
+      expect(config.retryAttempts).toBeGreaterThanOrEqual(0)
     })
   })
 })

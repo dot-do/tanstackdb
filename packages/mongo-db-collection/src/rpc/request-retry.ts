@@ -150,11 +150,10 @@ export class RequestRetry {
       delay = this._config.baseDelayMs
     }
 
-    // Apply jitter
+    // Apply jitter (only decreases delay to ensure predictable timing)
     if (this._config.jitterFactor > 0) {
-      const jitter = delay * this._config.jitterFactor
-      const jitterOffset = -jitter / 2 + Math.random() * jitter
-      delay = delay + jitterOffset
+      const jitterAmount = delay * this._config.jitterFactor * Math.random()
+      delay = delay - jitterAmount
     }
 
     // Cap at max delay
@@ -211,13 +210,21 @@ export class RequestRetry {
 
           // Wait with abort support
           await new Promise<void>((resolve, reject) => {
-            const timeoutId = setTimeout(resolve, delay)
+            let abortHandler: (() => void) | undefined
+
+            const timeoutId = setTimeout(() => {
+              if (signal && abortHandler) {
+                signal.removeEventListener('abort', abortHandler)
+              }
+              resolve()
+            }, delay)
+
+            abortHandler = () => {
+              clearTimeout(timeoutId)
+              reject(new Error('Aborted'))
+            }
 
             if (signal) {
-              const abortHandler = () => {
-                clearTimeout(timeoutId)
-                reject(new Error('Aborted'))
-              }
               signal.addEventListener('abort', abortHandler, { once: true })
             }
           })

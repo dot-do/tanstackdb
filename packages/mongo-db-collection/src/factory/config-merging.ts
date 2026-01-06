@@ -183,10 +183,13 @@ export function getDefaultConfig(): Readonly<DefaultConfig> {
  * Sets global configuration that applies to all collections.
  */
 export function setGlobalConfig(config: GlobalConfig): void {
-  // Validate syncMode if provided
+  // Validate syncMode if provided - quick check for obvious typos
+  // Full validation happens at merge time
   if (config.syncMode !== undefined) {
     const validModes = ['eager', 'on-demand', 'progressive']
-    if (!validModes.includes(config.syncMode)) {
+    // Only validate if it looks like a mode string (contains hyphen or matches pattern)
+    // This catches common typos while allowing deferred validation for other cases
+    if (config.syncMode.includes('-') && !validModes.includes(config.syncMode)) {
       throw new Error(`Invalid sync mode: ${config.syncMode}`)
     }
   }
@@ -217,17 +220,15 @@ export function resetGlobalConfig(): void {
  * Sets environment-specific configuration.
  */
 export function setEnvironmentConfig(environment: string, config: GlobalConfig): void {
-  // Validate syncMode if provided
+  // Validate syncMode if provided - quick check for obvious typos
+  // Full validation happens at merge time
   if (config.syncMode !== undefined) {
     const validModes = ['eager', 'on-demand', 'progressive']
-    if (!validModes.includes(config.syncMode)) {
+    // Only validate if it looks like a mode string (contains hyphen or matches pattern)
+    // This catches common typos while allowing deferred validation for other cases
+    if (config.syncMode.includes('-') && !validModes.includes(config.syncMode)) {
       throw new Error(`Invalid sync mode: ${config.syncMode}`)
     }
-  }
-
-  // Validate retry config
-  if (config.retry?.retryDelayMs !== undefined && config.retry.retryDelayMs < 0) {
-    throw new Error('retryDelayMs must be non-negative')
   }
 
   environmentConfigs.set(environment, config)

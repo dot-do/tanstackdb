@@ -7,33 +7,8 @@
  * @module @tanstack/mongo-db-collection/factory/use-collection-hook
  */
 
-// React types are declared locally to avoid requiring react as a dependency
-// The actual React hooks are imported dynamically or mocked in tests
-
-// Type definitions for React hooks
-type UseStateFn = <T>(initial: T) => [T, (value: T | ((prev: T) => T)) => void]
-type UseEffectFn = (effect: () => void | (() => void), deps?: unknown[]) => void
-type UseCallbackFn = <T extends (...args: unknown[]) => unknown>(fn: T, deps: unknown[]) => T
-type UseMemoFn = <T>(fn: () => T, deps: unknown[]) => T
-type UseRefFn = <T>(initial: T) => { current: T }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let React: any
-
-try {
-  // Try to import React if available
-  React = require('react')
-} catch {
-  // React not available - will use mock in tests
-  React = null
-}
-
-// Fallback implementations when React is not available or mocked
-const useState: UseStateFn = React?.useState ?? (<T>(initial: T) => [initial, () => {}])
-const useEffect: UseEffectFn = React?.useEffect ?? ((effect: () => void | (() => void)) => { effect() })
-const useCallback: UseCallbackFn = React?.useCallback ?? (<T extends (...args: unknown[]) => unknown>(fn: T) => fn)
-const useMemo: UseMemoFn = React?.useMemo ?? (<T>(fn: () => T) => fn())
-const useRef: UseRefFn = React?.useRef ?? (<T>(initial: T) => ({ current: initial }))
+// Import React hooks - these will be mocked in tests
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 
 import type { ZodSchema } from 'zod'
 import type { MongoDoCollectionConfig, SyncMode, MongoDoCredentials, SyncParams, SyncReturn } from '../types/index.js'

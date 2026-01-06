@@ -346,7 +346,7 @@ describe('RequestRetry', () => {
 
     it('should conditionally retry based on shouldRetry', async () => {
       const shouldRetry = vi.fn().mockImplementation((error: Error) => {
-        return error.message.includes('retry')
+        return error.message.includes('please')
       })
 
       const retry = new RequestRetry({

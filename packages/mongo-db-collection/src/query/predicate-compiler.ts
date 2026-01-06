@@ -11,6 +11,7 @@
  */
 
 import type { MongoFilterQuery } from '../types.js'
+import { sanitizeFieldPath, FieldPathValidationError } from './field-path-sanitization.js'
 
 // =============================================================================
 // Type Definitions
@@ -490,8 +491,13 @@ function validateIsNotNullPredicate(predicate: BasicExpression): void {
 /**
  * Extracts the field path from a PropRef as a dot-notation string.
  *
+ * This function validates the field path for security issues before returning it.
+ * Paths containing MongoDB operators ($), prototype pollution properties, or
+ * control characters will cause an error to be thrown.
+ *
  * @param ref - The property reference
  * @returns The field path as a dot-notation string
+ * @throws PredicateCompilationError if the field path is invalid or dangerous
  *
  * @example
  * ```typescript
@@ -500,7 +506,14 @@ function validateIsNotNullPredicate(predicate: BasicExpression): void {
  * ```
  */
 function extractFieldPath(ref: PropRef): string {
-  return ref.path.join('.')
+  try {
+    return sanitizeFieldPath(ref.path)
+  } catch (error) {
+    if (error instanceof FieldPathValidationError) {
+      throw new PredicateCompilationError(error.message)
+    }
+    throw error
+  }
 }
 
 /**

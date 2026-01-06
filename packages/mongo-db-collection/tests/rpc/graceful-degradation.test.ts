@@ -598,7 +598,7 @@ describe('GracefulDegradation', () => {
 
       // Delays should increase exponentially
       expect(delays[0]).toBeGreaterThanOrEqual(1000)
-      expect(delays[1]).toBeGreaterThanOrEqual(delays[0])
+      expect(delays[1]).toBeGreaterThanOrEqual(delays[0] ?? 0)
     })
 
     it('should respect max delay cap', async () => {
@@ -627,7 +627,7 @@ describe('GracefulDegradation', () => {
 
       // Delays should be capped at maxDelay
       for (let i = 1; i < delays.length; i++) {
-        const delay = delays[i] - delays[i - 1]
+        const delay = (delays[i] ?? 0) - (delays[i - 1] ?? 0)
         expect(delay).toBeLessThanOrEqual(10001) // maxDelay + 1ms tolerance
       }
     })

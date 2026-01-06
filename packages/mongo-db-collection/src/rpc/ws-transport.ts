@@ -103,7 +103,7 @@ declare global {
     readonly wasClean: boolean
   }
   interface ErrorEvent extends Event {
-    readonly error: Error | undefined
+    readonly error: any
     readonly message: string
   }
 }
@@ -230,10 +230,13 @@ export class WebSocketTransport extends EventEmitter {
   private _url: string
 
   /** Transport configuration options. */
-  private _options: Required<Omit<WebSocketTransportOptions, 'url' | 'binaryType' | 'encoding'>> & {
+  private _options: Required<Omit<WebSocketTransportOptions, 'url' | 'binaryType' | 'encoding' | 'authToken'>> & {
     binaryType?: 'blob' | 'arraybuffer'
     encoding?: 'json' | 'bson'
   }
+
+  /** Bearer token for authentication. */
+  private authToken?: string
 
   /** Current connection state. */
   private _state: TransportState = 'disconnected'
@@ -337,6 +340,9 @@ export class WebSocketTransport extends EventEmitter {
       }
       if (urlOrOptions.encoding) {
         this._options.encoding = urlOrOptions.encoding
+      }
+      if (urlOrOptions.authToken) {
+        this.authToken = urlOrOptions.authToken
       }
     }
 
@@ -488,7 +494,13 @@ export class WebSocketTransport extends EventEmitter {
       this.connectReject = reject
 
       try {
-        this.ws = new WebSocket(this._url)
+        // Create WebSocket with optional Bearer token in protocols
+        // This is more secure than passing token in URL query params
+        if (this.authToken) {
+          this.ws = new WebSocket(this._url, [`Bearer.${this.authToken}`])
+        } else {
+          this.ws = new WebSocket(this._url)
+        }
 
         if (this._options.binaryType) {
           this.ws.binaryType = this._options.binaryType
@@ -1140,7 +1152,12 @@ export class WebSocketTransport extends EventEmitter {
     this.reconnectTimer = setTimeout(() => {
       if (this.intentionalDisconnect) return
 
-      this.ws = new WebSocket(this._url)
+      // Create WebSocket with optional Bearer token in protocols
+      if (this.authToken) {
+        this.ws = new WebSocket(this._url, [`Bearer.${this.authToken}`])
+      } else {
+        this.ws = new WebSocket(this._url)
+      }
 
       if (this._options.binaryType) {
         this.ws.binaryType = this._options.binaryType

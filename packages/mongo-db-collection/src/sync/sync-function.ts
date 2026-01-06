@@ -322,6 +322,7 @@ export function createMongoDoSync<T extends { _id: string }>(
     async function performProgressiveSync(rpcClient: RpcClient): Promise<void> {
       const batchSize = extendedConfig.batchSize ?? 100
       let hasMore = true
+      let skip = 0
 
       begin()
 
@@ -330,6 +331,7 @@ export function createMongoDoSync<T extends { _id: string }>(
           database: config.database,
           collection: config.collectionName,
           limit: batchSize,
+          skip,
         })) as T[]
 
         for (const doc of documents) {
@@ -341,6 +343,10 @@ export function createMongoDoSync<T extends { _id: string }>(
           write(message)
         }
 
+        // Advance the skip cursor for the next batch
+        skip += documents.length
+
+        // Stop if we received fewer documents than requested (end of data)
         hasMore = documents.length === batchSize
 
         if (hasMore) {

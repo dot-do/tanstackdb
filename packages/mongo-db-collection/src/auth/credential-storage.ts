@@ -9,7 +9,7 @@
  * ## Features
  *
  * - **Multiple Storage Backends**: Memory, localStorage, sessionStorage, and IndexedDB
- * - **Strong Encryption**: Uses Web Crypto API (AES-GCM) with fallback to XOR for legacy environments
+ * - **Strong Encryption**: Uses Web Crypto API (AES-GCM) - requires secure context (HTTPS/localhost)
  * - **Credential Rotation**: Built-in support for rotating credentials with configurable policies
  * - **Storage Migration**: Helpers for migrating credentials between storage backends
  * - **Audit Logging**: Hooks for tracking credential operations for security monitoring
@@ -17,6 +17,7 @@
  *
  * ## Security Considerations
  *
+ * - **HTTPS Required**: Encryption requires a secure context (HTTPS or localhost)
  * - Encryption keys should be derived from user secrets, not stored directly
  * - Memory backend provides the highest security (no persistence)
  * - Enable audit logging in production to track credential access
@@ -64,14 +65,14 @@ export type StorageBackend = 'memory' | 'localStorage' | 'sessionStorage' | 'ind
 /**
  * Encryption algorithm types supported by the credential storage.
  *
- * - `aes-gcm`: AES-GCM encryption via Web Crypto API (recommended)
- * - `xor`: Simple XOR encryption fallback for environments without Web Crypto
+ * - `aes-gcm`: AES-GCM encryption via Web Crypto API (required)
  *
  * @remarks
- * AES-GCM is strongly recommended for production use. XOR is provided only
- * as a fallback for legacy environments without Web Crypto API support.
+ * AES-GCM is required for production use. Credential encryption requires
+ * a secure context (HTTPS or localhost). If Web Crypto API is not available,
+ * the CredentialStorage constructor will throw an error when encryption is enabled.
  */
-export type EncryptionAlgorithm = 'aes-gcm' | 'xor'
+export type EncryptionAlgorithm = 'aes-gcm'
 
 /**
  * Audit event types for credential operations.
@@ -213,9 +214,9 @@ export interface RotationConfig {
  *
  * @property backend - Storage backend to use (default: 'memory')
  * @property namespace - Namespace prefix for storage keys (default: 'mongo-do')
- * @property encrypt - Whether to encrypt stored credentials (default: false)
+ * @property encrypt - Whether to encrypt stored credentials (default: false, requires HTTPS or localhost)
  * @property encryptionKey - Key for encryption (required if encrypt is true)
- * @property encryptionAlgorithm - Encryption algorithm to use (default: 'aes-gcm' if available)
+ * @property encryptionAlgorithm - Encryption algorithm to use (always 'aes-gcm')
  * @property onAudit - Callback for audit events
  * @property rotation - Configuration for credential rotation
  * @property indexedDBName - Database name for IndexedDB backend (default: 'mongo-do-credentials')
@@ -376,7 +377,7 @@ export class CredentialStorage {
 
   /**
    * The encryption algorithm in use.
-   * Will be 'aes-gcm' if Web Crypto is available, otherwise 'xor'.
+   * Always 'aes-gcm' when encryption is enabled.
    */
   readonly encryptionAlgorithm: EncryptionAlgorithm
 
@@ -415,13 +416,14 @@ export class CredentialStorage {
    *
    * @param config - Configuration options for the storage instance
    * @throws {Error} When encryption is enabled but no encryption key is provided
+   * @throws {Error} When encryption is enabled but Web Crypto API is not available (requires HTTPS or localhost)
    *
    * @example
    * ```typescript
    * // Simple memory storage
    * const storage = new CredentialStorage();
    *
-   * // Encrypted localStorage with audit logging
+   * // Encrypted localStorage with audit logging (requires HTTPS or localhost)
    * const secureStorage = new CredentialStorage({
    *   backend: 'localStorage',
    *   encrypt: true,
@@ -442,20 +444,25 @@ export class CredentialStorage {
     // Check Web Crypto availability
     this.webCryptoAvailable = this.checkWebCryptoAvailability()
 
-    // Determine encryption algorithm
-    if (config?.encryptionAlgorithm) {
-      this.encryptionAlgorithm = config.encryptionAlgorithm
-    } else {
-      this.encryptionAlgorithm = this.webCryptoAvailable ? 'aes-gcm' : 'xor'
-    }
-
     // Validate encryption configuration
     if (this.isEncrypted && !this.encryptionKey) {
       throw new Error('Encryption key is required when encryption is enabled')
     }
 
+    // Require secure context (HTTPS/localhost) for encryption
+    if (this.isEncrypted && !this.webCryptoAvailable) {
+      throw new Error(
+        'Credential encryption requires Web Crypto API, which is only available in secure contexts (HTTPS or localhost). ' +
+        'Please use HTTPS, localhost, or disable encryption. ' +
+        'Note: Storing credentials without encryption is not recommended for production environments.'
+      )
+    }
+
+    // Set encryption algorithm (always aes-gcm when encryption is enabled)
+    this.encryptionAlgorithm = config?.encryptionAlgorithm ?? 'aes-gcm'
+
     // Initialize Web Crypto key if using AES-GCM
-    if (this.isEncrypted && this.encryptionAlgorithm === 'aes-gcm' && this.encryptionKey) {
+    if (this.isEncrypted && this.encryptionKey) {
       this.initializeCryptoKey(this.encryptionKey)
     }
 
@@ -476,19 +483,27 @@ export class CredentialStorage {
    * encrypting it first. The credential is wrapped with metadata including
    * storage timestamp and version for migration support.
    *
+   * **IMPORTANT**: When encryption is enabled, you must use `storeAsync()` instead
+   * of this method, as AES-GCM encryption requires async operations.
+   *
    * @param key - Unique identifier for the credential
    * @param credential - The credential data to store
    * @throws {Error} When key is empty
    * @throws {Error} When credential is null or undefined
+   * @throws {Error} When encryption is enabled (use storeAsync instead)
    *
    * @example
    * ```typescript
+   * // Without encryption
    * storage.store('user-auth', {
    *   token: 'jwt-token-here',
    *   refreshToken: 'refresh-token-here',
    *   expiresAt: Date.now() + 3600000,
    *   metadata: { userId: 'user_123' },
    * });
+   *
+   * // With encryption - use storeAsync instead
+   * await storage.storeAsync('user-auth', { ... });
    * ```
    */
   store(key: string, credential: StoredCredential): void {
@@ -579,7 +594,11 @@ export class CredentialStorage {
 
     let success = true
 
-    if (this.backend === 'indexedDB') {
+    const storageKey = this.getStorageKey(key)
+
+    if (this.backend === 'memory') {
+      this.memoryStore.set(key, encodedData)
+    } else if (this.backend === 'indexedDB') {
       try {
         await this.storeToIndexedDB(key, encodedData)
         this.memoryStore.set(key, encodedData)
@@ -589,9 +608,19 @@ export class CredentialStorage {
         this.memoryStore.set(key, encodedData)
       }
     } else {
-      // Use sync method for non-IndexedDB backends
-      this.store(key, credential)
-      return
+      const storage = this.getStorage()
+      if (storage) {
+        try {
+          storage.setItem(storageKey, encodedData)
+        } catch (error: unknown) {
+          success = false
+          // Handle quota exceeded or other storage errors gracefully
+          if (error instanceof Error && error.name === 'QuotaExceededError') {
+            this.emitAudit('store', key, false, { error: 'QuotaExceededError' })
+            return
+          }
+        }
+      }
     }
 
     this.emitAudit('store', key, success)
@@ -603,18 +632,24 @@ export class CredentialStorage {
    * Returns the stored credential if it exists and has not expired.
    * Expired credentials are automatically removed from storage.
    *
+   * **IMPORTANT**: When encryption is enabled, you must use `retrieveAsync()` instead
+   * of this method, as AES-GCM decryption requires async operations.
+   *
    * @param key - The key of the credential to retrieve
    * @returns The stored credential, or null if not found or expired
+   * @throws {Error} When encryption is enabled (use retrieveAsync instead)
    *
    * @example
    * ```typescript
+   * // Without encryption
    * const credential = storage.retrieve('user-auth');
    * if (credential) {
    *   console.log('Token:', credential.token);
    *   console.log('Expires:', new Date(credential.expiresAt));
-   * } else {
-   *   console.log('No valid credential found');
    * }
+   *
+   * // With encryption - use retrieveAsync instead
+   * const credential = await storage.retrieveAsync('user-auth');
    * ```
    */
   retrieve(key: string): StoredCredential | null {
@@ -682,6 +717,7 @@ export class CredentialStorage {
    */
   async retrieveAsync(key: string): Promise<StoredCredential | null> {
     let rawData: string | null = null
+    const storageKey = this.getStorageKey(key)
 
     if (this.backend === 'indexedDB') {
       // Try memory cache first
@@ -694,8 +730,14 @@ export class CredentialStorage {
           this.memoryStore.set(key, rawData)
         }
       }
+    } else if (this.backend === 'memory') {
+      rawData = this.memoryStore.get(key) ?? null
     } else {
-      return this.retrieve(key)
+      // localStorage or sessionStorage
+      const storage = this.getStorage()
+      if (storage) {
+        rawData = storage.getItem(storageKey)
+      }
     }
 
     if (!rawData) {
@@ -1326,27 +1368,28 @@ export class CredentialStorage {
         'encrypt',
         'decrypt',
       ])
-    } catch {
-      // Fall back to XOR if Web Crypto fails
-      this.encryptionAlgorithm === 'xor'
+    } catch (error) {
+      throw new Error('Failed to initialize encryption key: ' + String(error))
     }
   }
 
   /**
-   * Encrypt data synchronously (uses XOR fallback if needed).
+   * Encrypt data synchronously (throws error - use encryptAsync instead).
    * @internal
+   * @deprecated Use encryptAsync for proper AES-GCM encryption
    */
   private encrypt(data: string): string {
     if (!this.encryptionKey) {
       return data
     }
 
-    // Always use XOR for sync operations
-    return this.encryptXOR(data)
+    // Synchronous encryption is not supported with AES-GCM
+    // This should not be called when encryption is enabled
+    throw new Error('Synchronous encryption is not supported. Use async methods (storeAsync, retrieveAsync) for encrypted credentials.')
   }
 
   /**
-   * Encrypt data asynchronously using Web Crypto if available.
+   * Encrypt data asynchronously using Web Crypto AES-GCM.
    * @internal
    */
   private async encryptAsync(data: string): Promise<string> {
@@ -1354,85 +1397,48 @@ export class CredentialStorage {
       return data
     }
 
-    if (this.encryptionAlgorithm === 'aes-gcm' && this.webCryptoAvailable) {
-      try {
-        // Ensure crypto key is initialized
-        if (!this.cryptoKey) {
-          await this.initializeCryptoKey(this.encryptionKey)
-        }
-
-        if (this.cryptoKey) {
-          const encoder = new TextEncoder()
-          const dataBuffer = encoder.encode(data)
-
-          // Generate random IV
-          const iv = crypto.getRandomValues(new Uint8Array(12))
-
-          const encryptedBuffer = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, this.cryptoKey, dataBuffer)
-
-          // Combine IV and encrypted data
-          const combined = new Uint8Array(iv.length + encryptedBuffer.byteLength)
-          combined.set(iv)
-          combined.set(new Uint8Array(encryptedBuffer), iv.length)
-
-          // Base64 encode
-          return 'aes:' + btoa(String.fromCharCode(...combined))
-        }
-      } catch {
-        // Fall through to XOR
-      }
+    // Ensure crypto key is initialized
+    if (!this.cryptoKey) {
+      await this.initializeCryptoKey(this.encryptionKey)
     }
 
-    return this.encryptXOR(data)
+    if (!this.cryptoKey) {
+      throw new Error('Encryption key not initialized')
+    }
+
+    const encoder = new TextEncoder()
+    const dataBuffer = encoder.encode(data)
+
+    // Generate random IV
+    const iv = crypto.getRandomValues(new Uint8Array(12))
+
+    const encryptedBuffer = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, this.cryptoKey, dataBuffer)
+
+    // Combine IV and encrypted data
+    const combined = new Uint8Array(iv.length + encryptedBuffer.byteLength)
+    combined.set(iv)
+    combined.set(new Uint8Array(encryptedBuffer), iv.length)
+
+    // Base64 encode
+    return 'aes:' + btoa(String.fromCharCode(...combined))
   }
 
   /**
-   * XOR-based encryption for environments without Web Crypto.
+   * Decrypt data synchronously (throws error - use decryptAsync instead).
    * @internal
-   */
-  private encryptXOR(data: string): string {
-    if (!this.encryptionKey) {
-      return data
-    }
-
-    const keyBytes = this.encryptionKey
-    let result = ''
-
-    for (let i = 0; i < data.length; i++) {
-      const charCode = data.charCodeAt(i)
-      const keyCharCode = keyBytes.charCodeAt(i % keyBytes.length)
-      result += String.fromCharCode(charCode ^ keyCharCode)
-    }
-
-    return 'xor:' + btoa(result)
-  }
-
-  /**
-   * Decrypt data synchronously.
-   * @internal
+   * @deprecated Use decryptAsync for proper AES-GCM decryption
    */
   private decrypt(data: string): string {
     if (!this.encryptionKey) {
       return data
     }
 
-    // Check encryption prefix
-    if (data.startsWith('aes:')) {
-      // AES encrypted data requires async decryption
-      // For sync API, we can't decrypt AES - this shouldn't happen in normal use
-      throw new Error('AES-encrypted data requires async decryption')
-    }
-
-    if (data.startsWith('xor:')) {
-      return this.decryptXOR(data.slice(4))
-    }
-
-    // Legacy data without prefix - assume XOR
-    return this.decryptXOR(data)
+    // Synchronous decryption is not supported with AES-GCM
+    throw new Error('Synchronous decryption is not supported. Use async methods (retrieveAsync) for encrypted credentials.')
   }
 
   /**
-   * Decrypt data asynchronously.
+   * Decrypt data asynchronously using Web Crypto AES-GCM.
    * @internal
    */
   private async decryptAsync(data: string): Promise<string> {
@@ -1440,61 +1446,28 @@ export class CredentialStorage {
       return data
     }
 
-    if (data.startsWith('aes:')) {
-      try {
-        if (!this.cryptoKey) {
-          await this.initializeCryptoKey(this.encryptionKey)
-        }
-
-        if (this.cryptoKey) {
-          const combined = Uint8Array.from(atob(data.slice(4)), (c) => c.charCodeAt(0))
-
-          // Extract IV and encrypted data
-          const iv = combined.slice(0, 12)
-          const encryptedData = combined.slice(12)
-
-          const decryptedBuffer = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, this.cryptoKey, encryptedData)
-
-          const decoder = new TextDecoder()
-          return decoder.decode(decryptedBuffer)
-        }
-      } catch {
-        throw new Error('Decryption failed')
-      }
+    if (!data.startsWith('aes:')) {
+      throw new Error('Invalid encrypted data format. Data must be encrypted with AES-GCM.')
     }
 
-    if (data.startsWith('xor:')) {
-      return this.decryptXOR(data.slice(4))
+    if (!this.cryptoKey) {
+      await this.initializeCryptoKey(this.encryptionKey)
     }
 
-    // Legacy data
-    return this.decryptXOR(data)
-  }
-
-  /**
-   * XOR-based decryption.
-   * @internal
-   */
-  private decryptXOR(data: string): string {
-    if (!this.encryptionKey) {
-      return data
+    if (!this.cryptoKey) {
+      throw new Error('Decryption key not initialized')
     }
 
-    try {
-      const decoded = atob(data)
-      const keyBytes = this.encryptionKey
-      let result = ''
+    const combined = Uint8Array.from(atob(data.slice(4)), (c) => c.charCodeAt(0))
 
-      for (let i = 0; i < decoded.length; i++) {
-        const charCode = decoded.charCodeAt(i)
-        const keyCharCode = keyBytes.charCodeAt(i % keyBytes.length)
-        result += String.fromCharCode(charCode ^ keyCharCode)
-      }
+    // Extract IV and encrypted data
+    const iv = combined.slice(0, 12)
+    const encryptedData = combined.slice(12)
 
-      return result
-    } catch {
-      throw new Error('Decryption failed')
-    }
+    const decryptedBuffer = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, this.cryptoKey, encryptedData)
+
+    const decoder = new TextDecoder()
+    return decoder.decode(decryptedBuffer)
   }
 
   /**

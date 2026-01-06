@@ -39,9 +39,9 @@ const testDocumentSchema = z.object({
 type TestDocument = z.infer<typeof testDocumentSchema>
 
 // Mock Collection type for testing
-interface MockCollection<T> extends Partial<Collection<T>> {
+interface MockCollection<T extends object> {
   id: string
-  state: () => Map<string, T>
+  state: () => Map<string | number, T>
 }
 
 // Mock RPC client
@@ -305,8 +305,8 @@ describe('createMongoDoSync', () => {
 
       expect(mockParams.commit).toHaveBeenCalled()
       // commit should be called after writes
-      const writeOrder = mockParams.write.mock.invocationCallOrder[0]
-      const commitOrder = mockParams.commit.mock.invocationCallOrder[0]
+      const writeOrder = mockParams.write.mock.invocationCallOrder[0] ?? 0
+      const commitOrder = mockParams.commit.mock.invocationCallOrder[0] ?? 0
       expect(commitOrder).toBeGreaterThan(writeOrder)
     })
 
@@ -332,8 +332,8 @@ describe('createMongoDoSync', () => {
 
       expect(mockParams.markReady).toHaveBeenCalled()
       // markReady should be called after commit
-      const commitOrder = mockParams.commit.mock.invocationCallOrder[0]
-      const markReadyOrder = mockParams.markReady.mock.invocationCallOrder[0]
+      const commitOrder = mockParams.commit.mock.invocationCallOrder[0] ?? 0
+      const markReadyOrder = mockParams.markReady.mock.invocationCallOrder[0] ?? 0
       expect(markReadyOrder).toBeGreaterThan(commitOrder)
     })
 

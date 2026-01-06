@@ -549,12 +549,12 @@ describe('transformReplaceEvent', () => {
         },
       ]
 
-      const results = events.map(transformReplaceEvent)
+      const results = events.map((event) => transformReplaceEvent(event))
 
       expect(results).toHaveLength(3)
-      expect(results[0].key).toBe('1')
-      expect(results[1].key).toBe('2')
-      expect(results[2].key).toBe('3')
+      expect(results[0]!.key).toBe('1')
+      expect(results[1]!.key).toBe('2')
+      expect(results[2]!.key).toBe('3')
       results.forEach((result) => {
         expect(result.type).toBe('update')
       })

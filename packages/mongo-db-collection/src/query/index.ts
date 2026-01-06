@@ -38,3 +38,34 @@ export type {
   Func,
   BasicExpression,
 } from './predicate-compiler.js'
+
+// Pagination compilation
+export {
+  // Pagination Compilers
+  compileLimit,
+  compileSkip,
+  compileCursorPagination,
+  compilePagination,
+  // Error class
+  PaginationCompilationError,
+} from './pagination-compiler.js'
+
+// Pagination Types
+export type {
+  CursorDirection,
+  PaginationInput,
+  MongoPaginationOptions,
+} from './pagination-compiler.js'
+
+// Sort compilation
+export {
+  // Sort Compilers
+  createSortExpression,
+  compileSortExpression,
+  compileSortExpressions,
+  // Error class
+  SortCompilationError,
+} from './sort-compiler.js'
+
+// Sort Types
+export type { SortExpression } from './sort-compiler.js'

@@ -553,7 +553,7 @@ describe('TransactionWriter', () => {
       writer.flush()
 
       expect(writer.failedWrites).toHaveLength(1)
-      expect(writer.failedWrites[0].key).toBe('doc2')
+      expect(writer.failedWrites[0]?.key).toBe('doc2')
     })
 
     it('should clear failed writes on clearFailedWrites()', () => {

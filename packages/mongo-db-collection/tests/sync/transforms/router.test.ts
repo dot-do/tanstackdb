@@ -579,7 +579,7 @@ describe('ChangeEventRouter', () => {
 
       expect(batchHandler).toHaveBeenCalledTimes(1)
       expect(batchHandler).toHaveBeenCalledWith(expect.any(Array))
-      expect(batchHandler.mock.calls[0][0]).toHaveLength(3)
+      expect(batchHandler.mock.calls[0]?.[0]).toHaveLength(3)
     })
 
     it('should support manual batch flush', async () => {

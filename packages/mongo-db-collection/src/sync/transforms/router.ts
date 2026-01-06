@@ -913,6 +913,9 @@ export class ChangeEventRouter<T extends { _id: string }> {
       }
 
       const current = applicableMiddleware[index++]
+      if (!current) {
+        return
+      }
 
       if (this.config.enableDetailedMetrics) {
         this.middlewareExecutions++
@@ -1049,8 +1052,9 @@ export class ChangeEventRouter<T extends { _id: string }> {
 
     while (low < high) {
       const mid = Math.floor((low + high) / 2)
+      const midItem = this.priorityQueue[mid]
       // Higher priority values should come first
-      if (this.priorityQueue[mid].priorityValue >= event.priorityValue) {
+      if (midItem && midItem.priorityValue >= event.priorityValue) {
         low = mid + 1
       } else {
         high = mid
@@ -1213,7 +1217,7 @@ export class ChangeEventRouter<T extends { _id: string }> {
 
     const sorted = [...this.latencySamples].sort((a, b) => a - b)
     const index = Math.ceil((percentile / 100) * sorted.length) - 1
-    return sorted[Math.max(0, index)]
+    return sorted[Math.max(0, index)] ?? 0
   }
 
   /**

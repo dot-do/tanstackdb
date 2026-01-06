@@ -195,14 +195,14 @@ describe('CredentialStorage', () => {
       expect(storage.retrieve('key-2')).toEqual(credential2)
     })
 
-    it('should store encrypted credential when encryption is enabled', () => {
+    it('should store encrypted credential when encryption is enabled', async () => {
       const storage = new CredentialStorage({
         backend: 'memory',
         encrypt: true,
         encryptionKey: 'test-encryption-key-32-bytes-long',
       })
 
-      storage.store(testKey, testCredential)
+      await storage.storeAsync(testKey, testCredential)
 
       // The stored data should be encrypted (not plain text)
       const rawStored = (storage as any).memoryStore?.get(testKey)
@@ -319,15 +319,15 @@ describe('CredentialStorage', () => {
       expect(secondRetrieval).toBeNull()
     })
 
-    it('should decrypt and return credential when encryption is enabled', () => {
+    it('should decrypt and return credential when encryption is enabled', async () => {
       const storage = new CredentialStorage({
         backend: 'memory',
         encrypt: true,
         encryptionKey: 'test-encryption-key-32-bytes-long',
       })
 
-      storage.store(testKey, testCredential)
-      const retrieved = storage.retrieve(testKey)
+      await storage.storeAsync(testKey, testCredential)
+      const retrieved = await storage.retrieveAsync(testKey)
 
       expect(retrieved).toEqual(testCredential)
     })
@@ -416,17 +416,17 @@ describe('CredentialStorage', () => {
       expect(storage.retrieve('key-2')).toEqual(credential2)
     })
 
-    it('should remove encrypted credential', () => {
+    it('should remove encrypted credential', async () => {
       const storage = new CredentialStorage({
         backend: 'memory',
         encrypt: true,
         encryptionKey: 'test-encryption-key-32-bytes-long',
       })
 
-      storage.store(testKey, testCredential)
+      await storage.storeAsync(testKey, testCredential)
       storage.remove(testKey)
 
-      const retrieved = storage.retrieve(testKey)
+      const retrieved = await storage.retrieveAsync(testKey)
       expect(retrieved).toBeNull()
     })
   })
@@ -478,20 +478,20 @@ describe('CredentialStorage', () => {
       }).not.toThrow()
     })
 
-    it('should clear encrypted credentials', () => {
+    it('should clear encrypted credentials', async () => {
       const storage = new CredentialStorage({
         backend: 'memory',
         encrypt: true,
         encryptionKey: 'test-encryption-key-32-bytes-long',
       })
 
-      storage.store('key-1', testCredential)
-      storage.store('key-2', testCredential)
+      await storage.storeAsync('key-1', testCredential)
+      await storage.storeAsync('key-2', testCredential)
 
       storage.clear()
 
-      expect(storage.retrieve('key-1')).toBeNull()
-      expect(storage.retrieve('key-2')).toBeNull()
+      expect(await storage.retrieveAsync('key-1')).toBeNull()
+      expect(await storage.retrieveAsync('key-2')).toBeNull()
     })
 
     it('should only clear credentials within namespace', () => {
@@ -788,14 +788,14 @@ describe('CredentialStorage', () => {
   describe('encryption support', () => {
     const encryptionKey = 'test-encryption-key-32-bytes-long'
 
-    it('should encrypt credentials when encryption is enabled', () => {
+    it('should encrypt credentials when encryption is enabled', async () => {
       const storage = new CredentialStorage({
         backend: 'memory',
         encrypt: true,
         encryptionKey,
       })
 
-      storage.store(testKey, testCredential)
+      await storage.storeAsync(testKey, testCredential)
 
       // Access internal storage to verify encryption
       const rawStored = (storage as any).memoryStore?.get(testKey)
@@ -806,20 +806,20 @@ describe('CredentialStorage', () => {
       expect(rawStored).not.toContain(testCredential.refreshToken)
     })
 
-    it('should decrypt credentials when retrieving with encryption enabled', () => {
+    it('should decrypt credentials when retrieving with encryption enabled', async () => {
       const storage = new CredentialStorage({
         backend: 'memory',
         encrypt: true,
         encryptionKey,
       })
 
-      storage.store(testKey, testCredential)
-      const retrieved = storage.retrieve(testKey)
+      await storage.storeAsync(testKey, testCredential)
+      const retrieved = await storage.retrieveAsync(testKey)
 
       expect(retrieved).toEqual(testCredential)
     })
 
-    it('should handle decryption failure gracefully', () => {
+    it('should handle decryption failure gracefully', async () => {
       const storage = new CredentialStorage({
         backend: 'memory',
         encrypt: true,
@@ -829,19 +829,19 @@ describe('CredentialStorage', () => {
       // Manually corrupt encrypted data
       ;(storage as any).memoryStore?.set(testKey, 'corrupted-encrypted-data')
 
-      const retrieved = storage.retrieve(testKey)
+      const retrieved = await storage.retrieveAsync(testKey)
 
       expect(retrieved).toBeNull()
     })
 
-    it('should not decrypt with wrong encryption key', () => {
+    it('should not decrypt with wrong encryption key', async () => {
       const storage1 = new CredentialStorage({
         backend: 'localStorage',
         encrypt: true,
         encryptionKey: 'key-one-32-bytes-long-xxxxxxxx',
       })
 
-      storage1.store(testKey, testCredential)
+      await storage1.storeAsync(testKey, testCredential)
 
       // Try to retrieve with different key
       const storage2 = new CredentialStorage({
@@ -850,43 +850,43 @@ describe('CredentialStorage', () => {
         encryptionKey: 'key-two-32-bytes-long-xxxxxxxx',
       })
 
-      const retrieved = storage2.retrieve(testKey)
+      const retrieved = await storage2.retrieveAsync(testKey)
 
       // Should fail to decrypt with wrong key
       expect(retrieved).toBeNull()
     })
 
-    it('should support encryption with localStorage backend', () => {
+    it('should support encryption with localStorage backend', async () => {
       const storage = new CredentialStorage({
         backend: 'localStorage',
         encrypt: true,
         encryptionKey,
       })
 
-      storage.store(testKey, testCredential)
+      await storage.storeAsync(testKey, testCredential)
 
       expect(mockLocalStorage.setItem).toHaveBeenCalled()
 
-      const retrieved = storage.retrieve(testKey)
+      const retrieved = await storage.retrieveAsync(testKey)
       expect(retrieved).toEqual(testCredential)
     })
 
-    it('should support encryption with sessionStorage backend', () => {
+    it('should support encryption with sessionStorage backend', async () => {
       const storage = new CredentialStorage({
         backend: 'sessionStorage',
         encrypt: true,
         encryptionKey,
       })
 
-      storage.store(testKey, testCredential)
+      await storage.storeAsync(testKey, testCredential)
 
       expect(mockSessionStorage.setItem).toHaveBeenCalled()
 
-      const retrieved = storage.retrieve(testKey)
+      const retrieved = await storage.retrieveAsync(testKey)
       expect(retrieved).toEqual(testCredential)
     })
 
-    it('should encrypt different credentials with same key independently', () => {
+    it('should encrypt different credentials with same key independently', async () => {
       const storage = new CredentialStorage({
         backend: 'memory',
         encrypt: true,
@@ -896,11 +896,11 @@ describe('CredentialStorage', () => {
       const credential1 = { ...testCredential, token: 'token-1' }
       const credential2 = { ...testCredential, token: 'token-2' }
 
-      storage.store('key-1', credential1)
-      storage.store('key-2', credential2)
+      await storage.storeAsync('key-1', credential1)
+      await storage.storeAsync('key-2', credential2)
 
-      expect(storage.retrieve('key-1')).toEqual(credential1)
-      expect(storage.retrieve('key-2')).toEqual(credential2)
+      expect(await storage.retrieveAsync('key-1')).toEqual(credential1)
+      expect(await storage.retrieveAsync('key-2')).toEqual(credential2)
     })
   })
 

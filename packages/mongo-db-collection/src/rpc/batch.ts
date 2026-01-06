@@ -1178,7 +1178,7 @@ export class BatchExecutor {
       const response = await this.fetchFn(this.endpoint, {
         method: 'POST',
         headers,
-        body: finalBody,
+        body: finalBody as BodyInit,
       })
 
       // =========================================================================

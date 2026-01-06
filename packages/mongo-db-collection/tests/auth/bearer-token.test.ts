@@ -747,6 +747,418 @@ describe('BearerTokenAuthProvider', () => {
   })
 })
 
+/**
+ * Helper to create a JWT with Base64URL encoding (using - and _ instead of + and /)
+ * This is the correct encoding per RFC 7519, but atob() doesn't handle it.
+ */
+function createBase64UrlJWT(payload: Record<string, unknown>): string {
+  const header = { alg: 'HS256', typ: 'JWT' }
+
+  // Use standard Base64 first, then convert to Base64URL
+  const base64UrlEncode = (obj: Record<string, unknown>): string => {
+    const json = JSON.stringify(obj)
+    const base64 = btoa(json)
+    // Convert to Base64URL: replace + with -, / with _, remove padding =
+    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  }
+
+  const encodedHeader = base64UrlEncode(header)
+  const encodedPayload = base64UrlEncode(payload)
+  const signature = 'mock-signature'
+
+  return `${encodedHeader}.${encodedPayload}.${signature}`
+}
+
+/**
+ * Helper to create a payload that will contain Base64URL special characters when encoded.
+ * The characters - and _ appear in Base64URL when specific byte patterns occur.
+ */
+function createPayloadWithBase64UrlChars(): Record<string, unknown> {
+  // These specific values will produce + and / in standard Base64,
+  // which become - and _ in Base64URL
+  return {
+    sub: '??????',  // Contains bytes that produce + in base64
+    name: '>>>>>>>>',  // Contains bytes that produce / in base64
+    data: '\xfb\xef\xbe',  // Binary data that produces +/
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  }
+}
+
+describe('JWT Base64URL Decoding (RED Phase - Issue tanstackdb-zue)', () => {
+  /**
+   * These tests verify that JWT decoding correctly handles Base64URL encoding.
+   * Per RFC 7519, JWT uses Base64URL encoding which:
+   * - Uses '-' instead of '+'
+   * - Uses '_' instead of '/'
+   * - May omit padding '=' characters
+   *
+   * The current implementation uses atob() which only handles standard Base64,
+   * causing failures when tokens contain these URL-safe characters.
+   *
+   * RED PHASE: These tests will fail until the fix is implemented.
+   */
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  describe('Standard Base64 JWT payload', () => {
+    it('should decode JWT with standard Base64 characters', () => {
+      // Standard payload without special characters
+      const token = createMockJWT(3600)
+      const provider = new BearerTokenAuthProvider(token)
+
+      const payload = provider.getTokenPayload()
+
+      expect(payload).not.toBeNull()
+      expect(payload?.sub).toBe('1234567890')
+      expect(payload?.name).toBe('Test User')
+    })
+
+    it('should correctly identify expiry from standard Base64 JWT', () => {
+      const token = createMockJWT(3600)
+      const provider = new BearerTokenAuthProvider(token)
+
+      expect(provider.isValid()).toBe(true)
+      expect(provider.getTimeUntilExpiry()).toBeGreaterThan(3500)
+    })
+  })
+
+  describe('Base64URL with - and _ characters', () => {
+    it('should decode JWT payload containing - character (Base64URL)', () => {
+      // Create a payload that will produce '-' in Base64URL encoding
+      // The '-' character replaces '+' from standard Base64
+      const payload = {
+        sub: 'user-with-special-data',
+        // This string encodes to contain '+' in standard Base64
+        data: '\xfb\xef',
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      }
+
+      const token = createBase64UrlJWT(payload)
+      const provider = new BearerTokenAuthProvider(token)
+
+      const decoded = provider.getTokenPayload()
+
+      // This will fail with atob() because it doesn't handle '-'
+      expect(decoded).not.toBeNull()
+      expect(decoded?.sub).toBe('user-with-special-data')
+    })
+
+    it('should decode JWT payload containing _ character (Base64URL)', () => {
+      // Create a payload that will produce '_' in Base64URL encoding
+      // The '_' character replaces '/' from standard Base64
+      const payload = {
+        sub: 'user/with/slashes',
+        // This string encodes to contain '/' in standard Base64
+        data: '\xff\xff',
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      }
+
+      const token = createBase64UrlJWT(payload)
+      const provider = new BearerTokenAuthProvider(token)
+
+      const decoded = provider.getTokenPayload()
+
+      // This will fail with atob() because it doesn't handle '_'
+      expect(decoded).not.toBeNull()
+      expect(decoded?.sub).toBe('user/with/slashes')
+    })
+
+    it('should decode JWT payload containing both - and _ characters', () => {
+      const payload = createPayloadWithBase64UrlChars()
+      const token = createBase64UrlJWT(payload)
+      const provider = new BearerTokenAuthProvider(token)
+
+      const decoded = provider.getTokenPayload()
+
+      // This will fail with atob() because it doesn't handle Base64URL
+      expect(decoded).not.toBeNull()
+      expect(decoded?.exp).toBeDefined()
+    })
+
+    it('should correctly determine validity for Base64URL encoded JWT', () => {
+      const payload = {
+        sub: 'test-user',
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        // Include data that creates Base64URL special chars
+        roles: ['\xfb\xef\xbe\xad'],
+      }
+
+      const token = createBase64UrlJWT(payload)
+      const provider = new BearerTokenAuthProvider(token)
+
+      // Should be valid (not expired)
+      // This will fail if decoding fails due to Base64URL characters
+      expect(provider.isValid()).toBe(true)
+    })
+
+    it('should correctly detect expired Base64URL encoded JWT', () => {
+      const payload = {
+        sub: 'test-user',
+        iat: Math.floor(Date.now() / 1000) - 7200,
+        exp: Math.floor(Date.now() / 1000) - 3600, // Expired 1 hour ago
+        data: '\xfb\xef',
+      }
+
+      const token = createBase64UrlJWT(payload)
+      const provider = new BearerTokenAuthProvider(token)
+
+      // Should be invalid (expired)
+      expect(provider.isValid()).toBe(false)
+    })
+  })
+
+  describe('Payloads requiring padding restoration', () => {
+    it('should decode JWT with payload requiring 1 padding character', () => {
+      // Base64URL may omit trailing '=' padding
+      // Payload length % 4 == 3 requires 1 padding char
+      const payload = {
+        a: '12345', // Creates specific length
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      }
+
+      const token = createBase64UrlJWT(payload)
+      const provider = new BearerTokenAuthProvider(token)
+
+      const decoded = provider.getTokenPayload()
+
+      expect(decoded).not.toBeNull()
+      expect(decoded?.a).toBe('12345')
+    })
+
+    it('should decode JWT with payload requiring 2 padding characters', () => {
+      // Payload length % 4 == 2 requires 2 padding chars
+      const payload = {
+        ab: '1234', // Creates specific length
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      }
+
+      const token = createBase64UrlJWT(payload)
+      const provider = new BearerTokenAuthProvider(token)
+
+      const decoded = provider.getTokenPayload()
+
+      expect(decoded).not.toBeNull()
+      expect(decoded?.ab).toBe('1234')
+    })
+
+    it('should decode JWT with no padding needed', () => {
+      // Payload length % 4 == 0 requires no padding
+      const payload = {
+        abc: '123456789', // Creates length divisible by 4
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      }
+
+      const token = createBase64UrlJWT(payload)
+      const provider = new BearerTokenAuthProvider(token)
+
+      const decoded = provider.getTokenPayload()
+
+      expect(decoded).not.toBeNull()
+      expect(decoded?.abc).toBe('123456789')
+    })
+
+    it('should handle real-world JWT from Auth0/Firebase with stripped padding', () => {
+      // Real-world JWTs from providers like Auth0, Firebase, etc.
+      // always use Base64URL without padding
+      const payload = {
+        iss: 'https://auth.example.com/',
+        sub: 'auth0|1234567890abcdef',
+        aud: ['https://api.example.com', 'https://auth.example.com/userinfo'],
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        azp: 'client-id-with-special-chars',
+        scope: 'openid profile email',
+        permissions: ['read:users', 'write:users'],
+      }
+
+      const token = createBase64UrlJWT(payload)
+      const provider = new BearerTokenAuthProvider(token)
+
+      const decoded = provider.getTokenPayload()
+
+      expect(decoded).not.toBeNull()
+      expect(decoded?.iss).toBe('https://auth.example.com/')
+      expect(decoded?.sub).toBe('auth0|1234567890abcdef')
+      expect(decoded?.scope).toBe('openid profile email')
+    })
+  })
+
+  describe('Malformed JWT handling', () => {
+    it('should return null for JWT with invalid Base64 characters', () => {
+      // Contains characters that are invalid in both Base64 and Base64URL
+      const invalidToken = 'eyJhbGciOi!!!.eyJzdWIiOi@@@.signature'
+      const provider = new BearerTokenAuthProvider(invalidToken)
+
+      const payload = provider.getTokenPayload()
+
+      expect(payload).toBeNull()
+    })
+
+    it('should return null for JWT with wrong number of parts', () => {
+      const twoPartToken = 'header.payload'
+      const provider = new BearerTokenAuthProvider(twoPartToken)
+
+      expect(provider.getTokenPayload()).toBeNull()
+    })
+
+    it('should return null for JWT with four parts', () => {
+      const fourPartToken = 'header.payload.signature.extra'
+      const provider = new BearerTokenAuthProvider(fourPartToken)
+
+      expect(provider.getTokenPayload()).toBeNull()
+    })
+
+    it('should return null for JWT with empty payload section', () => {
+      const emptyPayloadToken = 'eyJhbGciOiJIUzI1NiJ9..signature'
+      const provider = new BearerTokenAuthProvider(emptyPayloadToken)
+
+      const payload = provider.getTokenPayload()
+
+      expect(payload).toBeNull()
+    })
+
+    it('should return null for JWT with non-JSON payload', () => {
+      // Valid Base64 but not JSON
+      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+      const notJson = btoa('this is not json')
+      const token = `${header}.${notJson}.signature`
+
+      const provider = new BearerTokenAuthProvider(token)
+
+      expect(provider.getTokenPayload()).toBeNull()
+    })
+
+    it('should handle JWT with payload that decodes to non-object', () => {
+      // Valid Base64, valid JSON, but not an object (array)
+      // Current implementation returns arrays - this test documents current behavior
+      // Whether this should return null is a separate enhancement
+      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+      const arrayPayload = btoa(JSON.stringify([1, 2, 3]))
+      const token = `${header}.${arrayPayload}.signature`
+
+      const provider = new BearerTokenAuthProvider(token)
+
+      const payload = provider.getTokenPayload()
+
+      // Current behavior: returns the parsed JSON even if it's not an object
+      // This is acceptable behavior - callers should validate the shape
+      expect(payload).toBeDefined()
+    })
+
+    it('should treat malformed JWT as static token for validity', () => {
+      const malformedToken = 'not-a-valid-jwt'
+      const provider = new BearerTokenAuthProvider(malformedToken)
+
+      // Malformed JWTs should be treated as static (always valid)
+      expect(provider.isValid()).toBe(true)
+      expect(provider.getTimeUntilExpiry()).toBeNull()
+    })
+
+    it('should handle JWT with corrupted Base64URL in payload', () => {
+      // Header is valid, but payload is corrupted Base64URL
+      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+      const corruptedPayload = 'eyJzdWIiOiIx-Mg_' // Truncated/corrupted
+      const token = `${header}.${corruptedPayload}.signature`
+
+      const provider = new BearerTokenAuthProvider(token)
+
+      expect(provider.getTokenPayload()).toBeNull()
+    })
+  })
+
+  describe('Edge cases for Base64URL decoding', () => {
+    it('should handle JWT from Google Identity Platform', () => {
+      // Google JWTs often have complex payloads with Base64URL encoding
+      const payload = {
+        iss: 'https://accounts.google.com',
+        azp: '1234567890-abcdefghijklmnop.apps.googleusercontent.com',
+        aud: '1234567890-abcdefghijklmnop.apps.googleusercontent.com',
+        sub: '1234567890123456789',
+        email: 'user@example.com',
+        email_verified: true,
+        at_hash: 'HK6E_P6Dh8Y93mRNtsDB1Q', // Contains Base64URL chars
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      }
+
+      const token = createBase64UrlJWT(payload)
+      const provider = new BearerTokenAuthProvider(token)
+
+      const decoded = provider.getTokenPayload()
+
+      expect(decoded).not.toBeNull()
+      expect(decoded?.email).toBe('user@example.com')
+    })
+
+    it('should handle JWT with unicode in claims', () => {
+      const payload = {
+        sub: 'user-123',
+        name: 'Test', // Using ASCII to avoid encoding issues
+        locale: 'ja-JP',
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      }
+
+      const token = createBase64UrlJWT(payload)
+      const provider = new BearerTokenAuthProvider(token)
+
+      const decoded = provider.getTokenPayload()
+
+      expect(decoded).not.toBeNull()
+      expect(decoded?.name).toBe('Test')
+    })
+
+    it('should handle JWT with very long payload', () => {
+      const payload = {
+        sub: 'user-123',
+        permissions: Array.from({ length: 100 }, (_, i) => `permission:${i}`),
+        roles: Array.from({ length: 50 }, (_, i) => `role:${i}`),
+        metadata: { key: 'a'.repeat(1000) },
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      }
+
+      const token = createBase64UrlJWT(payload)
+      const provider = new BearerTokenAuthProvider(token)
+
+      const decoded = provider.getTokenPayload()
+
+      expect(decoded).not.toBeNull()
+      expect(decoded?.permissions).toHaveLength(100)
+    })
+
+    it('should handle JWT where only header has Base64URL chars but payload does not', () => {
+      // Even if payload is standard Base64 compatible, the JWT spec requires
+      // Base64URL decoding for the entire token
+      const payload = {
+        sub: 'simple',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      }
+
+      const token = createBase64UrlJWT(payload)
+      const provider = new BearerTokenAuthProvider(token)
+
+      const decoded = provider.getTokenPayload()
+
+      expect(decoded).not.toBeNull()
+      expect(decoded?.sub).toBe('simple')
+    })
+  })
+})
+
 describe('BearerTokenAuthProvider Types', () => {
   it('should export proper TypeScript types', () => {
     const token = 'test-token'

@@ -172,6 +172,24 @@ export interface WebSocketTransportOptions {
    * @defaultValue 10
    */
   lowWaterMark?: number
+
+  /**
+   * Bearer token for WebSocket authentication.
+   *
+   * When provided, the token is passed via the WebSocket subprotocol
+   * mechanism (second parameter to WebSocket constructor) as `Bearer.{token}`.
+   * This is more secure than including the token in the URL query parameters,
+   * which can leak to browser history, server logs, and proxy logs.
+   *
+   * @example
+   * ```typescript
+   * const transport = new WebSocketTransport({
+   *   url: 'wss://api.mongo.do/realtime',
+   *   authToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+   * })
+   * ```
+   */
+  authToken?: string
 }
 
 // =============================================================================

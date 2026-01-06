@@ -29,8 +29,18 @@ import {
   transformUpdateEvent,
   type UpdateEventTransformOptions,
   type UpdateEventTransformResult,
+  type UpdateDescriptionMetadata,
 } from '../../../src/sync/transforms/update'
 import type { MongoUpdateEvent, ChangeMessage } from '../../../src/types/events'
+
+// Helper type to access updateDescription in metadata with proper typing
+type UpdateMetadata<T> = {
+  updateDescription?: UpdateDescriptionMetadata<T>
+  source?: string
+  timestamp?: number
+  operationType?: string
+  [key: string]: unknown
+}
 
 // Sample document types for testing
 interface User {
@@ -240,9 +250,10 @@ describe('transformUpdateEvent', () => {
       }
 
       const result = transformUpdateEvent(updateEvent, { includeUpdateDescription: true })
+      const metadata = result.metadata as UpdateMetadata<User>
 
-      expect(result.metadata?.updateDescription?.updatedFields).toEqual({})
-      expect(result.metadata?.updateDescription?.removedFields).toEqual(['deletedField'])
+      expect(metadata?.updateDescription?.updatedFields).toEqual({})
+      expect(metadata?.updateDescription?.removedFields).toEqual(['deletedField'])
     })
 
     it('should handle empty removedFields', () => {
@@ -266,8 +277,9 @@ describe('transformUpdateEvent', () => {
       }
 
       const result = transformUpdateEvent(updateEvent, { includeUpdateDescription: true })
+      const metadata = result.metadata as UpdateMetadata<User>
 
-      expect(result.metadata?.updateDescription?.removedFields).toEqual([])
+      expect(metadata?.updateDescription?.removedFields).toEqual([])
     })
 
     it('should handle nested field updates in updateDescription', () => {
@@ -291,8 +303,9 @@ describe('transformUpdateEvent', () => {
       }
 
       const result = transformUpdateEvent(updateEvent, { includeUpdateDescription: true })
+      const metadata = result.metadata as UpdateMetadata<User>
 
-      expect(result.metadata?.updateDescription?.updatedFields).toEqual({
+      expect(metadata?.updateDescription?.updatedFields).toEqual({
         'settings.theme': 'dark',
         'settings.notifications': false,
       })
@@ -663,9 +676,10 @@ describe('transformUpdateEvent', () => {
       }
 
       const result = transformUpdateEvent(updateEvent, { includeUpdateDescription: true })
+      const metadata = result.metadata as UpdateMetadata<NestedDoc>
 
       expect(result.value.level1.level2.level3.value).toBe('deep-updated')
-      expect(result.metadata?.updateDescription?.updatedFields).toEqual({
+      expect(metadata?.updateDescription?.updatedFields).toEqual({
         'level1.level2.level3.value': 'deep-updated',
       })
     })
@@ -718,8 +732,9 @@ describe('transformUpdateEvent', () => {
       }
 
       const result = transformUpdateEvent(updateEvent, { includeUpdateDescription: true })
+      const metadata = result.metadata as UpdateMetadata<DocWithOptional>
 
-      expect(result.metadata?.updateDescription?.removedFields).toEqual([
+      expect(metadata?.updateDescription?.removedFields).toEqual([
         'optional1',
         'optional2',
         'optional3',
@@ -749,9 +764,10 @@ describe('transformUpdateEvent', () => {
       }
 
       const result = transformUpdateEvent(updateEvent, { includeUpdateDescription: true })
+      const metadata = result.metadata as UpdateMetadata<DocWithMixed>
 
-      expect(result.metadata?.updateDescription?.updatedFields).toEqual({ updated: 'new-value' })
-      expect(result.metadata?.updateDescription?.removedFields).toEqual(['removed'])
+      expect(metadata?.updateDescription?.updatedFields).toEqual({ updated: 'new-value' })
+      expect(metadata?.updateDescription?.removedFields).toEqual(['removed'])
     })
   })
 

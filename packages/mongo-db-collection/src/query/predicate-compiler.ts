@@ -336,6 +336,158 @@ function validateSizePredicate(predicate: BasicExpression): void {
 }
 
 /**
+ * Validates that an expression is a valid $exists predicate.
+ *
+ * $exists predicates require a property reference as the first argument
+ * and a boolean value as the second argument.
+ *
+ * @param predicate - The expression to validate
+ * @throws PredicateCompilationError if the predicate is invalid
+ */
+function validateExistsPredicate(predicate: BasicExpression): void {
+  if (predicate.type !== 'func') {
+    throw new PredicateCompilationError(
+      `Expected function expression, got '${predicate.type}'`
+    )
+  }
+
+  const func = predicate as Func
+  if (!func.args || func.args.length < 2) {
+    throw new PredicateCompilationError(
+      `exists expression requires exactly 2 arguments, got ${func.args?.length ?? 0}`
+    )
+  }
+
+  const [firstArg, secondArg] = func.args
+  if (firstArg?.type !== 'ref') {
+    throw new PredicateCompilationError(
+      `First argument must be a property reference, got '${firstArg?.type}'`
+    )
+  }
+
+  if (secondArg?.type !== 'val') {
+    throw new PredicateCompilationError(
+      `Second argument must be a value, got '${secondArg?.type}'`
+    )
+  }
+
+  const value = secondArg as Value
+  if (typeof value.value !== 'boolean') {
+    throw new PredicateCompilationError(
+      `exists expression requires a boolean value, got ${typeof value.value}`
+    )
+  }
+}
+
+/**
+ * Validates that an expression is a valid $type predicate.
+ *
+ * $type predicates require a property reference as the first argument
+ * and a type value (string, number, or array of strings) as the second argument.
+ *
+ * @param predicate - The expression to validate
+ * @throws PredicateCompilationError if the predicate is invalid
+ */
+function validateTypePredicate(predicate: BasicExpression): void {
+  if (predicate.type !== 'func') {
+    throw new PredicateCompilationError(
+      `Expected function expression, got '${predicate.type}'`
+    )
+  }
+
+  const func = predicate as Func
+  if (!func.args || func.args.length < 2) {
+    throw new PredicateCompilationError(
+      `type expression requires exactly 2 arguments, got ${func.args?.length ?? 0}`
+    )
+  }
+
+  const [firstArg, secondArg] = func.args
+  if (firstArg?.type !== 'ref') {
+    throw new PredicateCompilationError(
+      `First argument must be a property reference, got '${firstArg?.type}'`
+    )
+  }
+
+  if (secondArg?.type !== 'val') {
+    throw new PredicateCompilationError(
+      `Second argument must be a value, got '${secondArg?.type}'`
+    )
+  }
+
+  const value = secondArg as Value
+  const validTypes = typeof value.value === 'string' ||
+    typeof value.value === 'number' ||
+    (Array.isArray(value.value) && value.value.every((v) => typeof v === 'string'))
+
+  if (!validTypes) {
+    throw new PredicateCompilationError(
+      `type expression requires a string, number, or array of strings, got ${typeof value.value}`
+    )
+  }
+}
+
+/**
+ * Validates that an expression is a valid isNull predicate.
+ *
+ * isNull predicates require a property reference as the only argument.
+ *
+ * @param predicate - The expression to validate
+ * @throws PredicateCompilationError if the predicate is invalid
+ */
+function validateIsNullPredicate(predicate: BasicExpression): void {
+  if (predicate.type !== 'func') {
+    throw new PredicateCompilationError(
+      `Expected function expression, got '${predicate.type}'`
+    )
+  }
+
+  const func = predicate as Func
+  if (!func.args || func.args.length < 1) {
+    throw new PredicateCompilationError(
+      `isNull expression requires exactly 1 argument, got ${func.args?.length ?? 0}`
+    )
+  }
+
+  const [firstArg] = func.args
+  if (firstArg?.type !== 'ref') {
+    throw new PredicateCompilationError(
+      `First argument must be a property reference, got '${firstArg?.type}'`
+    )
+  }
+}
+
+/**
+ * Validates that an expression is a valid isNotNull predicate.
+ *
+ * isNotNull predicates require a property reference as the only argument.
+ *
+ * @param predicate - The expression to validate
+ * @throws PredicateCompilationError if the predicate is invalid
+ */
+function validateIsNotNullPredicate(predicate: BasicExpression): void {
+  if (predicate.type !== 'func') {
+    throw new PredicateCompilationError(
+      `Expected function expression, got '${predicate.type}'`
+    )
+  }
+
+  const func = predicate as Func
+  if (!func.args || func.args.length < 1) {
+    throw new PredicateCompilationError(
+      `isNotNull expression requires exactly 1 argument, got ${func.args?.length ?? 0}`
+    )
+  }
+
+  const [firstArg] = func.args
+  if (firstArg?.type !== 'ref') {
+    throw new PredicateCompilationError(
+      `First argument must be a property reference, got '${firstArg?.type}'`
+    )
+  }
+}
+
+/**
  * Extracts the field path from a PropRef as a dot-notation string.
  *
  * @param ref - The property reference
@@ -720,6 +872,139 @@ export function compileSizePredicate<T = Record<string, unknown>>(
 }
 
 // =============================================================================
+// Null/Exists Predicate Compilers
+// =============================================================================
+
+/**
+ * Compiles an $exists predicate into a MongoDB query filter.
+ *
+ * $exists matches documents where the field exists (or does not exist).
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The exists predicate to compile
+ * @returns MongoDB filter query object with $exists operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'exists', args: [ref('email'), val(true)] }
+ * // Result: { email: { $exists: true } }
+ * ```
+ */
+export function compileExistsPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  validateExistsPredicate(predicate)
+
+  const func = predicate as Func<boolean>
+  const ref = func.args[0] as PropRef
+  const value = func.args[1] as Value
+
+  const fieldPath = extractFieldPath(ref)
+
+  return {
+    [fieldPath]: { $exists: value.value },
+  } as MongoFilterQuery<T>
+}
+
+/**
+ * Compiles a $type predicate into a MongoDB query filter.
+ *
+ * $type matches documents where the field is of the specified BSON type.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The type predicate to compile
+ * @returns MongoDB filter query object with $type operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'type', args: [ref('age'), val('number')] }
+ * // Result: { age: { $type: 'number' } }
+ *
+ * // { type: 'func', name: 'type', args: [ref('field'), val(2)] }
+ * // Result: { field: { $type: 2 } }
+ * ```
+ */
+export function compileTypePredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  validateTypePredicate(predicate)
+
+  const func = predicate as Func<boolean>
+  const ref = func.args[0] as PropRef
+  const value = func.args[1] as Value
+
+  const fieldPath = extractFieldPath(ref)
+
+  return {
+    [fieldPath]: { $type: value.value },
+  } as MongoFilterQuery<T>
+}
+
+/**
+ * Compiles an isNull predicate into a MongoDB query filter.
+ *
+ * isNull matches documents where the field value is null.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The isNull predicate to compile
+ * @returns MongoDB filter query object with null check
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'isNull', args: [ref('email')] }
+ * // Result: { email: null }
+ * ```
+ */
+export function compileIsNullPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  validateIsNullPredicate(predicate)
+
+  const func = predicate as Func<boolean>
+  const ref = func.args[0] as PropRef
+
+  const fieldPath = extractFieldPath(ref)
+
+  return {
+    [fieldPath]: null,
+  } as MongoFilterQuery<T>
+}
+
+/**
+ * Compiles an isNotNull predicate into a MongoDB query filter.
+ *
+ * isNotNull matches documents where the field value is not null.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The isNotNull predicate to compile
+ * @returns MongoDB filter query object with $ne: null check
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'isNotNull', args: [ref('email')] }
+ * // Result: { email: { $ne: null } }
+ * ```
+ */
+export function compileIsNotNullPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  validateIsNotNullPredicate(predicate)
+
+  const func = predicate as Func<boolean>
+  const ref = func.args[0] as PropRef
+
+  const fieldPath = extractFieldPath(ref)
+
+  return {
+    [fieldPath]: { $ne: null },
+  } as MongoFilterQuery<T>
+}
+
+// =============================================================================
 // Logical Predicate Compilers
 // =============================================================================
 
@@ -905,6 +1190,40 @@ export function compileNotPredicate<T = Record<string, unknown>>(
         [fieldPath]: { $not: { [operator!]: normalizedValue } },
       } as MongoFilterQuery<T>
     }
+
+    // For string predicates (regex, startsWith, endsWith, contains)
+    // Use field-level $not with the compiled regex
+    if (['regex', 'startsWith', 'endsWith', 'contains'].includes(innerFunc.name)) {
+      // Compile the string predicate to get the regex structure
+      const compiled = compilePredicate<T>(innerPredicate)
+
+      // Extract the field path and regex from the compiled result
+      const fieldPath = Object.keys(compiled)[0]!
+      const regexObj = (compiled as Record<string, unknown>)[fieldPath]
+
+      return {
+        [fieldPath]: { $not: regexObj },
+      } as MongoFilterQuery<T>
+    }
+
+    // For exists predicate, use field-level $not
+    if (innerFunc.name === 'exists') {
+      const ref = innerFunc.args[0] as PropRef
+      const value = innerFunc.args[1] as Value
+      const fieldPath = extractFieldPath(ref)
+
+      return {
+        [fieldPath]: { $not: { $exists: value.value } },
+      } as MongoFilterQuery<T>
+    }
+
+    // For isNull predicate, wrap the compiled result
+    if (innerFunc.name === 'isNull') {
+      const compiled = compilePredicate<T>(innerPredicate)
+      return {
+        $nor: [compiled],
+      } as MongoFilterQuery<T>
+    }
   }
 
   // Fallback: wrap the compiled predicate in $nor
@@ -959,6 +1278,276 @@ export function compileNorPredicate<T = Record<string, unknown>>(
 }
 
 // =============================================================================
+// String Predicate Compilers
+// =============================================================================
+
+/**
+ * Escapes special regex characters in a string.
+ *
+ * This ensures that literal strings used in startsWith, endsWith, and contains
+ * predicates don't get interpreted as regex patterns.
+ *
+ * @param str - The string to escape
+ * @returns The escaped string safe for use in regex
+ */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}[\]()|\\\/]/g, '\\$&')
+}
+
+/**
+ * Validates that an expression is a valid regex predicate.
+ *
+ * @param predicate - The expression to validate
+ * @param funcName - The expected function name (for error messages)
+ * @throws PredicateCompilationError if the predicate is invalid
+ */
+function validateRegexPredicate(predicate: BasicExpression, funcName: string): void {
+  if (predicate.type !== 'func') {
+    throw new PredicateCompilationError(
+      `Expected function expression, got '${predicate.type}'`
+    )
+  }
+
+  const func = predicate as Func
+  if (func.name !== funcName) {
+    throw new PredicateCompilationError(
+      `Expected '${funcName}' function, got '${func.name}'`
+    )
+  }
+
+  if (!func.args || func.args.length < 2) {
+    throw new PredicateCompilationError(
+      `${funcName} expression requires at least 2 arguments, got ${func.args?.length ?? 0}`
+    )
+  }
+
+  const [firstArg, secondArg, thirdArg] = func.args
+  if (firstArg?.type !== 'ref') {
+    throw new PredicateCompilationError(
+      `First argument must be a property reference, got '${firstArg?.type}'`
+    )
+  }
+
+  if (secondArg?.type !== 'val') {
+    throw new PredicateCompilationError(
+      `Second argument must be a value, got '${secondArg?.type}'`
+    )
+  }
+
+  const patternValue = secondArg as Value
+  if (typeof patternValue.value !== 'string') {
+    throw new PredicateCompilationError(
+      `${funcName} expression requires a string pattern, got ${typeof patternValue.value}`
+    )
+  }
+
+  // Validate options if provided
+  if (thirdArg !== undefined) {
+    if (thirdArg.type !== 'val') {
+      throw new PredicateCompilationError(
+        `Third argument (options) must be a value, got '${thirdArg.type}'`
+      )
+    }
+    const optionsValue = thirdArg as Value
+    if (typeof optionsValue.value !== 'string') {
+      throw new PredicateCompilationError(
+        `${funcName} options must be a string, got ${typeof optionsValue.value}`
+      )
+    }
+  }
+}
+
+/**
+ * Validates that an expression is a valid string predicate (startsWith, endsWith, contains).
+ *
+ * @param predicate - The expression to validate
+ * @param funcName - The expected function name (for error messages)
+ * @throws PredicateCompilationError if the predicate is invalid
+ */
+function validateStringPredicate(predicate: BasicExpression, funcName: string): void {
+  if (predicate.type !== 'func') {
+    throw new PredicateCompilationError(
+      `Expected function expression, got '${predicate.type}'`
+    )
+  }
+
+  const func = predicate as Func
+  if (func.name !== funcName) {
+    throw new PredicateCompilationError(
+      `Expected '${funcName}' function, got '${func.name}'`
+    )
+  }
+
+  if (!func.args || func.args.length < 2) {
+    throw new PredicateCompilationError(
+      `${funcName} expression requires exactly 2 arguments, got ${func.args?.length ?? 0}`
+    )
+  }
+
+  const [firstArg, secondArg] = func.args
+  if (firstArg?.type !== 'ref') {
+    throw new PredicateCompilationError(
+      `First argument must be a property reference, got '${firstArg?.type}'`
+    )
+  }
+
+  if (secondArg?.type !== 'val') {
+    throw new PredicateCompilationError(
+      `Second argument must be a value, got '${secondArg?.type}'`
+    )
+  }
+
+  const value = secondArg as Value
+  if (typeof value.value !== 'string') {
+    throw new PredicateCompilationError(
+      `${funcName} expression requires a string value, got ${typeof value.value}`
+    )
+  }
+}
+
+/**
+ * Compiles a regex predicate into a MongoDB query filter.
+ *
+ * Takes a TanStack DB regex expression and converts it into MongoDB's $regex operator.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The regex predicate to compile
+ * @returns MongoDB filter query object with $regex operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'regex', args: [ref('name'), val('^John'), val('i')] }
+ * // Result: { name: { $regex: '^John', $options: 'i' } }
+ * ```
+ */
+export function compileRegexPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  validateRegexPredicate(predicate, 'regex')
+
+  const func = predicate as Func<boolean>
+  const ref = func.args[0] as PropRef
+  const patternValue = func.args[1] as Value
+  const optionsValue = func.args[2] as Value | undefined
+
+  const fieldPath = extractFieldPath(ref)
+  const pattern = patternValue.value as string
+
+  if (optionsValue?.value) {
+    return {
+      [fieldPath]: { $regex: pattern, $options: optionsValue.value as string },
+    } as MongoFilterQuery<T>
+  }
+
+  return {
+    [fieldPath]: { $regex: pattern },
+  } as MongoFilterQuery<T>
+}
+
+/**
+ * Compiles a startsWith predicate into a MongoDB query filter.
+ *
+ * Converts the value into a regex pattern anchored at the start (^).
+ * Special regex characters in the value are escaped.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The startsWith predicate to compile
+ * @returns MongoDB filter query object with $regex operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'startsWith', args: [ref('name'), val('Dr.')] }
+ * // Result: { name: { $regex: '^Dr\\.' } }
+ * ```
+ */
+export function compileStartsWithPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  validateStringPredicate(predicate, 'startsWith')
+
+  const func = predicate as Func<boolean>
+  const ref = func.args[0] as PropRef
+  const value = func.args[1] as Value
+
+  const fieldPath = extractFieldPath(ref)
+  const escapedValue = escapeRegex(value.value as string)
+
+  return {
+    [fieldPath]: { $regex: `^${escapedValue}` },
+  } as MongoFilterQuery<T>
+}
+
+/**
+ * Compiles an endsWith predicate into a MongoDB query filter.
+ *
+ * Converts the value into a regex pattern anchored at the end ($).
+ * Special regex characters in the value are escaped.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The endsWith predicate to compile
+ * @returns MongoDB filter query object with $regex operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'endsWith', args: [ref('email'), val('@gmail.com')] }
+ * // Result: { email: { $regex: '@gmail\\.com$' } }
+ * ```
+ */
+export function compileEndsWithPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  validateStringPredicate(predicate, 'endsWith')
+
+  const func = predicate as Func<boolean>
+  const ref = func.args[0] as PropRef
+  const value = func.args[1] as Value
+
+  const fieldPath = extractFieldPath(ref)
+  const escapedValue = escapeRegex(value.value as string)
+
+  return {
+    [fieldPath]: { $regex: `${escapedValue}$` },
+  } as MongoFilterQuery<T>
+}
+
+/**
+ * Compiles a contains predicate into a MongoDB query filter.
+ *
+ * Converts the value into a regex pattern (unanchored).
+ * Special regex characters in the value are escaped.
+ *
+ * @typeParam T - The document type for type-safe query generation
+ * @param predicate - The contains predicate to compile
+ * @returns MongoDB filter query object with $regex operator
+ * @throws PredicateCompilationError if the predicate is invalid
+ *
+ * @example
+ * ```typescript
+ * // { type: 'func', name: 'contains', args: [ref('description'), val('important')] }
+ * // Result: { description: { $regex: 'important' } }
+ * ```
+ */
+export function compileContainsPredicate<T = Record<string, unknown>>(
+  predicate: BasicExpression<boolean>
+): MongoFilterQuery<T> {
+  validateStringPredicate(predicate, 'contains')
+
+  const func = predicate as Func<boolean>
+  const ref = func.args[0] as PropRef
+  const value = func.args[1] as Value
+
+  const fieldPath = extractFieldPath(ref)
+  const escapedValue = escapeRegex(value.value as string)
+
+  return {
+    [fieldPath]: { $regex: escapedValue },
+  } as MongoFilterQuery<T>
+}
+
+// =============================================================================
 // Generic Predicate Compiler
 // =============================================================================
 
@@ -974,9 +1563,7 @@ export function compileNorPredicate<T = Record<string, unknown>>(
  * - Array predicates ('in', 'nin' functions)
  * - Array field predicates ('elemMatch', 'all', 'size' functions)
  * - Logical predicates ('and', 'or', 'not', 'nor' functions)
- *
- * Future versions will add support for:
- * - Pattern predicates (regex)
+ * - String predicates ('regex', 'startsWith', 'endsWith', 'contains' functions)
  *
  * @typeParam T - The document type for type-safe query generation
  * @param predicate - The predicate to compile
@@ -1027,6 +1614,16 @@ export function compilePredicate<T = Record<string, unknown>>(
       case 'size':
         return compileSizePredicate<T>(predicate)
 
+      // Null/exists predicates
+      case 'exists':
+        return compileExistsPredicate<T>(predicate)
+      case 'type':
+        return compileTypePredicate<T>(predicate)
+      case 'isNull':
+        return compileIsNullPredicate<T>(predicate)
+      case 'isNotNull':
+        return compileIsNotNullPredicate<T>(predicate)
+
       // Logical predicates
       case 'and':
         return compileAndPredicate<T>(predicate)
@@ -1036,6 +1633,16 @@ export function compilePredicate<T = Record<string, unknown>>(
         return compileNotPredicate<T>(predicate)
       case 'nor':
         return compileNorPredicate<T>(predicate)
+
+      // String predicates
+      case 'regex':
+        return compileRegexPredicate<T>(predicate)
+      case 'startsWith':
+        return compileStartsWithPredicate<T>(predicate)
+      case 'endsWith':
+        return compileEndsWithPredicate<T>(predicate)
+      case 'contains':
+        return compileContainsPredicate<T>(predicate)
 
       default:
         throw new PredicateCompilationError(
@@ -1049,13 +1656,3 @@ export function compilePredicate<T = Record<string, unknown>>(
   )
 }
 
-// =============================================================================
-// Exports
-// =============================================================================
-
-export type {
-  PropRef,
-  Value,
-  Func,
-  BasicExpression,
-}

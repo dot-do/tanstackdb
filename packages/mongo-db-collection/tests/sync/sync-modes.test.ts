@@ -323,7 +323,7 @@ describe('Eager Sync Mode', () => {
       expect(writtenMessages).toHaveLength(3)
       writtenMessages.forEach((msg, i) => {
         expect(msg.type).toBe('insert')
-        expect(msg.key).toBe(testDocs[i]._id)
+        expect(msg.key).toBe(testDocs[i]?._id)
         expect(msg.value).toEqual(testDocs[i])
       })
     })

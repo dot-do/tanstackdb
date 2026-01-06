@@ -168,7 +168,7 @@ describe('Delete Event Transform', () => {
 
       const transformKey = (id: string) => {
         const parts = id.split('-')
-        return `${parts[0].toLowerCase()}:${parts[1]}:${parts[2]}`
+        return `${parts[0]!.toLowerCase()}:${parts[1]}:${parts[2]}`
       }
 
       const result = transformDeleteEvent(deleteEvent, transformKey)
@@ -340,9 +340,9 @@ describe('Delete Event Transform', () => {
       const results = deleteEvents.map((event) => transformDeleteEvent(event))
 
       expect(results).toHaveLength(3)
-      expect(results[0].key).toBe('user-1')
-      expect(results[1].key).toBe('user-2')
-      expect(results[2].key).toBe('user-3')
+      expect(results[0]!.key).toBe('user-1')
+      expect(results[1]!.key).toBe('user-2')
+      expect(results[2]!.key).toBe('user-3')
       results.forEach((result) => {
         expect(result.type).toBe('delete')
       })

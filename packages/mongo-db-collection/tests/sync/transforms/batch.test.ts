@@ -168,7 +168,7 @@ describe('BatchEventTransformer', () => {
 
       await vi.advanceTimersByTimeAsync(50)
 
-      const batch = onBatch.mock.calls[0][0] as ChangeMessage<TestDocument>[]
+      const batch = onBatch.mock.calls[0]?.[0] as ChangeMessage<TestDocument>[]
       expect(batch).toHaveLength(1)
       expect(batch[0]).toEqual({
         type: 'insert',
@@ -196,7 +196,7 @@ describe('BatchEventTransformer', () => {
 
       await vi.advanceTimersByTimeAsync(50)
 
-      const batch = onBatch.mock.calls[0][0] as ChangeMessage<TestDocument>[]
+      const batch = onBatch.mock.calls[0]?.[0] as ChangeMessage<TestDocument>[]
       expect(batch).toHaveLength(1)
       expect(batch[0]).toEqual({
         type: 'update',
@@ -223,7 +223,7 @@ describe('BatchEventTransformer', () => {
 
       await vi.advanceTimersByTimeAsync(50)
 
-      const batch = onBatch.mock.calls[0][0] as ChangeMessage<TestDocument>[]
+      const batch = onBatch.mock.calls[0]?.[0] as ChangeMessage<TestDocument>[]
       expect(batch).toHaveLength(1)
       expect(batch[0]).toEqual({
         type: 'delete',
@@ -247,7 +247,7 @@ describe('BatchEventTransformer', () => {
 
       await vi.advanceTimersByTimeAsync(50)
 
-      const batch = onBatch.mock.calls[0][0] as ChangeMessage<TestDocument>[]
+      const batch = onBatch.mock.calls[0]?.[0] as ChangeMessage<TestDocument>[]
       expect(batch).toHaveLength(1)
       expect(batch[0]).toEqual({
         type: 'update',
@@ -290,7 +290,7 @@ describe('BatchEventTransformer', () => {
 
       await vi.advanceTimersByTimeAsync(100)
 
-      const batch = onBatch.mock.calls[0][0] as ChangeMessage<TestDocument>[]
+      const batch = onBatch.mock.calls[0]?.[0] as ChangeMessage<TestDocument>[]
       // Should coalesce to single update with final value
       expect(batch).toHaveLength(1)
       expect(batch[0]).toEqual(
@@ -325,7 +325,7 @@ describe('BatchEventTransformer', () => {
 
       await vi.advanceTimersByTimeAsync(100)
 
-      const batch = onBatch.mock.calls[0][0] as ChangeMessage<TestDocument>[]
+      const batch = onBatch.mock.calls[0]?.[0] as ChangeMessage<TestDocument>[]
       // Insert + Update should coalesce to Insert with final value
       expect(batch).toHaveLength(1)
       expect(batch[0]).toEqual({
@@ -389,7 +389,7 @@ describe('BatchEventTransformer', () => {
 
       await vi.advanceTimersByTimeAsync(100)
 
-      const batch = onBatch.mock.calls[0][0] as ChangeMessage<TestDocument>[]
+      const batch = onBatch.mock.calls[0]?.[0] as ChangeMessage<TestDocument>[]
       expect(batch).toHaveLength(2)
       expect(batch).toContainEqual(
         expect.objectContaining({
@@ -431,7 +431,7 @@ describe('BatchEventTransformer', () => {
 
       await vi.advanceTimersByTimeAsync(100)
 
-      const batch = onBatch.mock.calls[0][0] as ChangeMessage<TestDocument>[]
+      const batch = onBatch.mock.calls[0]?.[0] as ChangeMessage<TestDocument>[]
       // Without coalescing, should have both updates
       expect(batch).toHaveLength(2)
     })
@@ -470,7 +470,7 @@ describe('BatchEventTransformer', () => {
       await vi.advanceTimersByTimeAsync(0)
       expect(onBatch).toHaveBeenCalledTimes(1)
 
-      const batch = onBatch.mock.calls[0][0] as ChangeMessage<TestDocument>[]
+      const batch = onBatch.mock.calls[0]?.[0] as ChangeMessage<TestDocument>[]
       expect(batch).toHaveLength(3)
     })
 
@@ -508,7 +508,7 @@ describe('BatchEventTransformer', () => {
       await vi.advanceTimersByTimeAsync(100)
       expect(onBatch).toHaveBeenCalledTimes(2)
 
-      const secondBatch = onBatch.mock.calls[1][0] as ChangeMessage<TestDocument>[]
+      const secondBatch = onBatch.mock.calls[1]?.[0] as ChangeMessage<TestDocument>[]
       expect(secondBatch).toHaveLength(1)
       expect(secondBatch[0]).toMatchObject({ key: 'doc3' })
     })
@@ -679,7 +679,7 @@ describe('BatchEventTransformer', () => {
 
       await vi.advanceTimersByTimeAsync(100)
 
-      const batch = onBatch.mock.calls[0][0] as ChangeMessage<TestDocument>[]
+      const batch = onBatch.mock.calls[0]?.[0] as ChangeMessage<TestDocument>[]
       expect(batch).toHaveLength(4)
       expect(batch[0]).toMatchObject({ key: 'doc1', type: 'insert' })
       expect(batch[1]).toMatchObject({ key: 'doc2', type: 'insert' })
@@ -709,7 +709,7 @@ describe('BatchEventTransformer', () => {
       await vi.advanceTimersByTimeAsync(50)
 
       expect(onError).toHaveBeenCalledWith(expect.any(Error))
-      expect(onError.mock.calls[0][0].message).toBe('Batch processing failed')
+      expect(onError.mock.calls[0]?.[0]?.message).toBe('Batch processing failed')
     })
 
     it('should continue processing after error in batch callback', async () => {
@@ -939,8 +939,8 @@ describe('BatchEventTransformer', () => {
 
       await vi.advanceTimersByTimeAsync(50)
 
-      const batch = onBatch.mock.calls[0][0] as ChangeMessage<TestDocument>[]
-      expect(batch[0].metadata).toEqual(
+      const batch = onBatch.mock.calls[0]?.[0] as ChangeMessage<TestDocument>[] | undefined
+      expect(batch?.[0]?.metadata).toEqual(
         expect.objectContaining({
           source: 'change-stream',
           timestamp: 1234567890,

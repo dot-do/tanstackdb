@@ -21,11 +21,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   selectSyncMode,
   createSyncModeSelector,
+  validateSyncModeConfig,
+  getDefaultSyncModeThresholds,
+} from '../../src/sync/sync-mode-selector'
+import type {
   SyncModeSelector,
   SyncModeSelectionConfig,
   SyncModeTransition,
-  validateSyncModeConfig,
-  getDefaultSyncModeThresholds,
   SyncModeThresholds,
 } from '../../src/sync/sync-mode-selector'
 import type { SyncMode } from '../../src/types'
@@ -380,8 +382,8 @@ describe('Sync Mode Selector - Runtime Mode Switching', () => {
       selector.onModeChange(listener)
       selector.setMode('progressive')
 
-      const transition: SyncModeTransition = listener.mock.calls[0][0]
-      expect(transition.timestamp).toBeInstanceOf(Date)
+      const transition = listener.mock.calls[0]?.[0] as SyncModeTransition | undefined
+      expect(transition?.timestamp).toBeInstanceOf(Date)
     })
 
     it('should include reason in transition', () => {
@@ -389,8 +391,8 @@ describe('Sync Mode Selector - Runtime Mode Switching', () => {
       selector.onModeChange(listener)
       selector.setMode('progressive', { reason: 'User preference' })
 
-      const transition: SyncModeTransition = listener.mock.calls[0][0]
-      expect(transition.reason).toBe('User preference')
+      const transition = listener.mock.calls[0]?.[0] as SyncModeTransition | undefined
+      expect(transition?.reason).toBe('User preference')
     })
 
     it('should return unsubscribe function', () => {

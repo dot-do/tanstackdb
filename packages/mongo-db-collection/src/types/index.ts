@@ -1,5 +1,6 @@
 import type { ZodSchema } from 'zod'
 import type { Collection } from '@tanstack/db'
+import type { BasicExpression } from '../query/predicate-compiler.js'
 
 // Re-export event types
 export type {
@@ -1134,6 +1135,51 @@ export interface LoadSubsetOptions<T = Record<string, unknown>> {
    * ```
    */
   cursorField?: string
+
+  /**
+   * TanStack DB predicate expression (BasicExpression<boolean>).
+   *
+   * An alternative to the `where` clause that uses TanStack DB's structured
+   * predicate format. When provided, this takes precedence over `where`.
+   * The predicate will be compiled into a MongoDB filter query.
+   *
+   * @example Equality predicate
+   * ```typescript
+   * predicate: {
+   *   type: 'func',
+   *   name: 'eq',
+   *   args: [
+   *     { type: 'ref', path: ['status'] },
+   *     { type: 'val', value: 'active' }
+   *   ]
+   * }
+   * ```
+   *
+   * @example Comparison predicate
+   * ```typescript
+   * predicate: {
+   *   type: 'func',
+   *   name: 'gt',
+   *   args: [
+   *     { type: 'ref', path: ['age'] },
+   *     { type: 'val', value: 18 }
+   *   ]
+   * }
+   * ```
+   *
+   * @example Logical AND predicate
+   * ```typescript
+   * predicate: {
+   *   type: 'func',
+   *   name: 'and',
+   *   args: [
+   *     { type: 'func', name: 'eq', args: [...] },
+   *     { type: 'func', name: 'gt', args: [...] }
+   *   ]
+   * }
+   * ```
+   */
+  predicate?: BasicExpression<boolean>
 }
 
 // =============================================================================

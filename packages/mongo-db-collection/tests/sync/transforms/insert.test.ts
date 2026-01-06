@@ -1048,8 +1048,8 @@ describe('transformInsertEvent', () => {
       const result = transformInsertEvent(event)
 
       expect(result.value.items).toHaveLength(2)
-      expect(result.value.items[0].nested.flag).toBe(true)
-      expect(result.value.items[1].nested.flag).toBe(false)
+      expect(result.value.items[0]!.nested.flag).toBe(true)
+      expect(result.value.items[1]!.nested.flag).toBe(false)
     })
   })
 
@@ -1157,8 +1157,8 @@ describe('transformInsertEvent', () => {
       }
 
       expect(results).toHaveLength(1000)
-      expect(results[0].key).toBe('rapid-0')
-      expect(results[999].key).toBe('rapid-999')
+      expect(results[0]!.key).toBe('rapid-0')
+      expect(results[999]!.key).toBe('rapid-999')
     })
 
     it('should maintain referential integrity between key and value._id', () => {

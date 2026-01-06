@@ -864,6 +864,10 @@ export class BearerTokenAuthProvider {
 
   /**
    * Internal method to decode JWT payload without caching.
+   * Handles Base64URL encoding per RFC 7519:
+   * - Replaces '-' with '+'
+   * - Replaces '_' with '/'
+   * - Adds padding '=' as needed
    */
   private decodeTokenPayload(): Record<string, unknown> | null {
     try {
@@ -872,8 +876,17 @@ export class BearerTokenAuthProvider {
         return null
       }
 
-      const payload = parts[1]
-      const decoded = atob(payload)
+      const payload = parts[1]!
+
+      // Convert Base64URL to standard Base64
+      // 1. Replace URL-safe characters with standard Base64 characters
+      let base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
+
+      // 2. Add padding if needed (Base64 requires length to be multiple of 4)
+      const paddingNeeded = (4 - (base64.length % 4)) % 4
+      base64 += '='.repeat(paddingNeeded)
+
+      const decoded = atob(base64)
       return JSON.parse(decoded) as Record<string, unknown>
     } catch {
       return null

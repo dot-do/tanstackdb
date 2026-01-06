@@ -176,3 +176,57 @@ export function createMongoDoCollection<TDocument = unknown>(
 ): MongoDoCollectionConfig<TDocument> {
   return mongoDoCollectionOptions(config)
 }
+
+// ============================================================================
+// Mutation Handlers
+// ============================================================================
+
+/**
+ * Re-export mutation handlers for direct use.
+ * These handlers are used internally by the sync function but can also
+ * be used directly for custom integrations.
+ */
+export {
+  createInsertMutationHandler,
+  handleInsertMutation,
+  createUpdateMutationHandler,
+  createDeleteMutationHandler,
+  handleDeleteMutation,
+} from './sync/handlers/index.js'
+
+export type {
+  // Insert mutation types
+  RpcClient,
+  PendingMutation,
+  Transaction,
+  InsertMutationContext,
+  InsertMutationResult,
+  RetryConfig,
+  BeforeInsertContext,
+  AfterInsertContext,
+  ErrorContext,
+  InsertMutationHandlerConfig,
+  HandleInsertMutationConfig,
+  // Update mutation types
+  UpdateMutation,
+  UpdateResult,
+  UpdateMutationHandlerConfig,
+  UpdateMutationHandler,
+  // Delete mutation types
+  DeleteMutationContext,
+  DeleteMutationResult,
+  BeforeDeleteContext,
+  AfterDeleteContext,
+  DeleteMutationHandlerConfig,
+  HandleDeleteMutationConfig,
+} from './sync/handlers/index.js'
+
+// ============================================================================
+// Factory Module
+// ============================================================================
+
+/**
+ * Re-export factory functions for fluent builder API.
+ * These provide an alternative to the direct object configuration approach.
+ */
+export { createOptionsBuilder, type OptionsBuilder } from './factory/index.js'

@@ -25,13 +25,20 @@
  * @see https://tanstack.com/db/latest/docs
  */
 
-import { describe, it, expect, expectTypeOf } from 'vitest'
+import { describe, it, expect, expectTypeOf, vi } from 'vitest'
 import {
   compileSortExpression,
   compileSortExpressions,
   createSortExpression,
   SortCompilationError,
+  compileExtendedSort,
+  compileStableSort,
+  compileSortWithNulls,
+  compileSortWithCaseSensitivity,
+  createCollation,
   type SortExpression,
+  type ExtendedSortResult,
+  type CollationSpec,
 } from '../../src/query/sort-compiler'
 import { createRef } from '../../src/query/predicate-compiler'
 import type { SortSpec, SortDirection } from '../../src/types'
@@ -427,110 +434,146 @@ describe('Array Field Sorting', () => {
     })
   })
 
-  describe('Array Element Access Sorting (RED - Unimplemented)', () => {
-    it.skip('should compile sort on specific array index', () => {
-      // This would require extended syntax like "tags.0"
+  describe('Array Element Access Sorting', () => {
+    it('should compile sort on specific array index', () => {
+      // Array index access works with dot notation like "tags.0"
       const expr = createSortExpression('tags.0', 'asc')
       const result = compileSortExpression(expr)
       expect(result).toEqual({ 'tags.0': 1 })
     })
 
-    it.skip('should compile sort using $first array operator', () => {
-      // Future: Support for array operators in sort
-      // { $sort: { tags: { $first: 1 } } }
-      expect(true).toBe(false) // Placeholder
+    it('should compile sort using nested array index', () => {
+      // Support for nested array access
+      const expr = createSortExpression('items.0.name', 'desc')
+      const result = compileSortExpression(expr)
+      expect(result).toEqual({ 'items.0.name': -1 })
     })
   })
 })
 
 // =============================================================================
-// Case-Insensitive Sorting Tests (RED - Unimplemented)
+// Case-Insensitive Sorting Tests
 // =============================================================================
 
-describe('Case-Insensitive Sorting (RED - Unimplemented)', () => {
+describe('Case-Insensitive Sorting', () => {
   describe('Collation-Based Case Insensitivity', () => {
-    it.skip('should support case-insensitive sort option', () => {
-      // Future feature: createSortExpression('name', 'asc', { caseInsensitive: true })
-      // Should generate collation option for MongoDB
-      expect(true).toBe(false) // Placeholder
+    it('should support case-insensitive sort option', () => {
+      const expr = createSortExpression('name', 'asc', { caseInsensitive: true })
+      const result = compileExtendedSort([expr])
+      expect(result.sort).toEqual({ name: 1 })
+      expect(result.collation).toEqual({ locale: 'en', strength: 2 })
     })
 
-    it.skip('should compile sort with collation strength 2 (case-insensitive)', () => {
-      // MongoDB collation: { locale: 'en', strength: 2 }
-      expect(true).toBe(false) // Placeholder
+    it('should compile sort with collation strength 2 (case-insensitive)', () => {
+      const collation = createCollation('en', 2)
+      expect(collation).toEqual({ locale: 'en', strength: 2 })
     })
 
-    it.skip('should allow per-field case sensitivity options', () => {
-      // Some fields case-sensitive, others not
-      expect(true).toBe(false) // Placeholder
+    it('should allow per-field case sensitivity options', () => {
+      const result = compileSortWithCaseSensitivity([
+        { field: 'name', direction: 'asc', caseInsensitive: true },
+        { field: 'code', direction: 'desc', caseInsensitive: false },
+      ])
+      expect(result.sort).toEqual({ name: 1, code: -1 })
+      // Collation applies to the query level (all case-insensitive fields)
+      expect(result.collation).toEqual({ locale: 'en', strength: 2 })
     })
   })
 
-  describe('Manual Case Normalization', () => {
-    it.skip('should support $toLower projection for sorting', () => {
-      // Alternative: Use $toLower in aggregation pipeline
-      expect(true).toBe(false) // Placeholder
+  describe('Collation Options', () => {
+    it('should create collation with custom locale', () => {
+      const collation = createCollation('fr', 2)
+      expect(collation).toEqual({ locale: 'fr', strength: 2 })
+    })
+
+    it('should create collation with different strength levels', () => {
+      const strength1 = createCollation('en', 1)
+      const strength3 = createCollation('en', 3)
+      expect(strength1.strength).toBe(1)
+      expect(strength3.strength).toBe(3)
     })
   })
 })
 
 // =============================================================================
-// Null Value Handling Tests (RED - Unimplemented)
+// Null Value Handling Tests
 // =============================================================================
 
-describe('Null Value Handling in Sort Order (RED - Unimplemented)', () => {
-  describe('Default Null Behavior', () => {
-    it.skip('should compile sort with nulls-first option', () => {
-      // Future: createSortExpression('name', 'asc', { nulls: 'first' })
-      expect(true).toBe(false) // Placeholder
+describe('Null Value Handling in Sort Order', () => {
+  describe('Null Positioning Options', () => {
+    it('should compile sort with nulls-first option', () => {
+      const result = compileSortWithNulls('name', 'asc', 'first')
+      expect(result.sort).toEqual({ name: 1 })
+      // nulls-first is default MongoDB behavior for ascending
+      expect(result.filter).toBeUndefined()
     })
 
-    it.skip('should compile sort with nulls-last option', () => {
-      // Future: createSortExpression('name', 'asc', { nulls: 'last' })
-      expect(true).toBe(false) // Placeholder
+    it('should compile sort with nulls-last option', () => {
+      const result = compileSortWithNulls('name', 'asc', 'last')
+      expect(result.sort).toEqual({ name: 1 })
+      // nulls-last adds a filter to exclude nulls
+      expect(result.filter).toEqual({ name: { $ne: null } })
     })
 
-    it.skip('should handle missing fields in sort (treated as null)', () => {
-      // MongoDB treats missing fields as null
-      expect(true).toBe(false) // Placeholder
+    it('should handle missing fields in sort (treated as null)', () => {
+      // MongoDB treats missing fields as null in sort
+      const expr = createSortExpression('optionalField', 'asc')
+      const result = compileSortExpression(expr)
+      // The sort compiles normally; MongoDB handles missing fields as null
+      expect(result).toEqual({ optionalField: 1 })
     })
   })
 
   describe('Null Filtering with Sort', () => {
-    it.skip('should support excluding nulls from sort results', () => {
-      // Future: Combine with filter { field: { $ne: null } }
-      expect(true).toBe(false) // Placeholder
+    it('should support excluding nulls from sort results', () => {
+      const expr = createSortExpression('name', 'desc', { nulls: 'last' })
+      const result = compileExtendedSort([expr])
+      expect(result.sort).toEqual({ name: -1 })
+      expect(result.filter).toEqual({ name: { $ne: null } })
     })
   })
 })
 
 // =============================================================================
-// Sort Stability Tests (RED - Unimplemented)
+// Sort Stability Tests
 // =============================================================================
 
-describe('Sort Stability Guarantees (RED - Unimplemented)', () => {
+describe('Sort Stability Guarantees', () => {
   describe('Tie-Breaking with _id', () => {
-    it.skip('should automatically add _id for stable sorting', () => {
-      // Future: compileSortExpressions([...], { stable: true })
-      // Should append _id: 1 if not present
-      expect(true).toBe(false) // Placeholder
+    it('should automatically add _id for stable sorting', () => {
+      const expr = createSortExpression('name', 'asc')
+      const result = compileStableSort([expr])
+      expect(result.sort).toEqual({ name: 1, _id: 1 })
     })
 
-    it.skip('should not duplicate _id if already present', () => {
-      // If _id is in sort, don't add again
-      expect(true).toBe(false) // Placeholder
+    it('should not duplicate _id if already present', () => {
+      const exprs = [
+        createSortExpression('name', 'asc'),
+        createSortExpression('_id', 'asc'),
+      ]
+      const result = compileStableSort(exprs)
+      // _id should appear only once
+      expect(result.sort).toEqual({ name: 1, _id: 1 })
     })
 
-    it.skip('should preserve user-specified _id direction', () => {
-      // If user specified _id: -1, keep it
-      expect(true).toBe(false) // Placeholder
+    it('should preserve user-specified _id direction', () => {
+      const exprs = [
+        createSortExpression('name', 'asc'),
+        createSortExpression('_id', 'desc'),
+      ]
+      const result = compileStableSort(exprs)
+      // User specified _id: -1, should be preserved
+      expect(result.sort).toEqual({ name: 1, _id: -1 })
     })
   })
 
   describe('Deterministic Ordering', () => {
-    it.skip('should warn when sort lacks unique field', () => {
-      // Dev warning if sort doesn't include _id or unique field
-      expect(true).toBe(false) // Placeholder
+    it('should warn when sort lacks unique field', () => {
+      const warnings: string[] = []
+      const expr = createSortExpression('name', 'asc')
+      const result = compileStableSort([expr], (msg) => warnings.push(msg))
+      expect(warnings.length).toBeGreaterThan(0)
+      expect(warnings[0]).toContain('_id')
     })
   })
 })
